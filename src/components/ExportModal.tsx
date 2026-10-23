@@ -59,6 +59,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     hiddenDiv.style.left = '0';
     // Força a largura exata de um A4 a 96dpi para proporção correta
     hiddenDiv.style.width = '794px'; 
+    hiddenDiv.style.height = '1123px'; // Altura A4 (96dpi) - ISSO EVITA QUE FIQUE ESPREMIDO
     hiddenDiv.style.background = 'white';
     hiddenDiv.style.opacity = '0';
     hiddenDiv.style.pointerEvents = 'none';

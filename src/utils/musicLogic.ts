@@ -69,6 +69,10 @@ export async function processMusicXmlAsync(
 
     const data = await response.json();
     console.log(`[Frontend] Sucesso! Tom detectado: ${data.detectedKey}`);
+    if (data.debugLogs) {
+      console.log("%c--- LOGS DO PYTHON ---", "color: #4f46e5; font-weight: bold;");
+      console.log(data.debugLogs);
+    }
     
     return {
       processedXml: data.processedXml,

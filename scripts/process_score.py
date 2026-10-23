@@ -77,13 +77,19 @@ def obter_nome_pt(pitch):
             nome += 'bb'
     return nome
 
+def debug(msg):
+    import sys
+    print(f"[PYTHON DEBUG] {msg}", file=sys.stderr)
+
 def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_names=True, add_key=True, transpose_sol_fa=True):
+    debug(f"Iniciando processamento. Instrumento recebido: '{instrument_name}'")
     score = music21.converter.parse(xml_path)
     
     # 1. Transposição Clave de Sol -> Fá (-9M) para Bombardino e Trombone
     if transpose_sol_fa and instrument_name in ["Bombardino", "Trombone"]:
         has_treble = any(c.sign == 'G' for c in score.recurse().getElementsByClass('Clef'))
         if has_treble:
+            debug("Clave de Sol detectada. Transpondo para Fá (-M9).")
             score.transpose('-M9', inPlace=True)
             for c in score.recurse().getElementsByClass('Clef'):
                 if c.sign == 'G':
@@ -111,11 +117,18 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
 
     # 3. Pistos e Nomes das Notas
     mapa = MAPEAMENTOS.get(instrument_name)
-    
-    # Iterar especificamente sobre as notas (inclui acordes)
+    if mapa:
+        debug(f"Mapa de dedilhado encontrado com {len(mapa)} posições.")
+    else:
+        debug(f"ALERTA CRÍTICO: Nenhum mapa encontrado para '{instrument_name}'.")
+
+    notas_processadas = 0
+    dedilhados_adicionados = 0
+
     for nota in score.recurse().notes:
         if nota.isNote:
-            nota.lyrics = [] # Limpa sujeiras do XML original
+            notas_processadas += 1
+            nota.lyrics = [] 
             
             if add_note_names:
                 nome_pt = obter_nome_pt(nota.pitch)
@@ -124,26 +137,37 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
             if add_fingerings and mapa:
                 chave_qml = nota.pitch.midi - 18
                 dedilhado = mapa.get(chave_qml)
+                
+                # Log detalhado das 5 primeiras notas para diagnóstico
+                if notas_processadas <= 5:
+                    debug(f"Nota {notas_processadas}: {nota.pitch.nameWithOctave} | MIDI: {nota.pitch.midi} | Chave QML: {chave_qml} | Dedilhado: {dedilhado}")
+                
                 if dedilhado:
                     nota.addLyric(dedilhado, lyricNumber=2)
+                    dedilhados_adicionados += 1
                     
         elif nota.isChord:
-            nota.lyrics = [] # Limpa sujeiras do XML original
-            
-            # Processa a primeira nota do acorde (resolve o bug do Audiveris)
+            nota.lyrics = [] 
             for n in nota:
+                notas_processadas += 1
                 if add_note_names:
                     nome_pt = obter_nome_pt(n.pitch)
-                    nota.addLyric(nome_pt, lyricNumber=1) # Adiciona no objeto 'nota' (acorde) para alinhar
+                    nota.addLyric(nome_pt, lyricNumber=1) 
                     
                 if add_fingerings and mapa:
                     chave_qml = n.pitch.midi - 18
                     dedilhado = mapa.get(chave_qml)
+                    
+                    if notas_processadas <= 5:
+                        debug(f"Acorde Nota {notas_processadas}: {n.pitch.nameWithOctave} | MIDI: {n.pitch.midi} | Chave QML: {chave_qml} | Dedilhado: {dedilhado}")
+                        
                     if dedilhado:
                         nota.addLyric(dedilhado, lyricNumber=2)
-                break # Garante que apenas a nota principal receba texto
+                        dedilhados_adicionados += 1
+                break 
 
-    # Exportar MusicXML
+    debug(f"Resumo: {notas_processadas} notas lidas, {dedilhados_adicionados} dedilhados inseridos.")
+
     out_path = xml_path + ".processed.xml"
     score.write('musicxml', fp=out_path)
     return out_path, detected_key

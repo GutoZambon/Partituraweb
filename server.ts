@@ -62,7 +62,8 @@ app.post('/api/process-xml', async (req, res) => {
         const keyMatch = stdout.match(/KEY:(.+)/);
         const detectedKey = keyMatch ? keyMatch[1].trim() : '';
 
-        res.json({ processedXml, detectedKey });
+        res.json({ processedXml, detectedKey, debugLogs: stderr });
+
       } catch (readError) {
         console.error(`Erro ao ler arquivo processado: ${readError}`);
         res.status(500).json({ error: 'Falha ao ler o resultado do processamento.' });
