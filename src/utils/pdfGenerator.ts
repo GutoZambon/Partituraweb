@@ -29,6 +29,21 @@ export function sanitizeWinAnsi(str: string): string {
     .replace(/[^\x00-\xFF]/g, ''); // strip any non-latin1 characters
 }
 
+export function getFingeringGuide(instrument: string): string {
+  switch (instrument) {
+    case 'Trompete':
+      return 'PISTOS: Do(0) Re(1) Mi(0) Fa(1) Sol(0) La(1-2) Si(2) Do#(1-2-3)';
+    case 'Trombone':
+      return 'POSICOES DE VARA: Do(6a) Re(4a) Mi(2a) Fa(1a) Sol(4a) La(2a) Si b(1a)';
+    case 'Tuba':
+      return 'PISTOS: Do(0) Re(1-2) Mi(2) Fa(0) Sol(1-2) La(1) Si(2) Do#(1-2-3)';
+    case 'Bombardino':
+      return 'PISTOS: Do(0) Re(1-2) Mi(2) Fa(0) Sol(1-2) La(1) Si(2) Do#(1-2-3-4)';
+    default:
+      return 'NOTAS EM PORTUGUES: Do, Re, Mi, Fa, Sol, La, Si';
+  }
+}
+
 /**
  * Checks if a canvas or image data is effectively a blank page
  */
@@ -57,6 +72,7 @@ export interface PageRenderSource {
   scoreTitle: string;
   instrument: string;
   pageNumber: number;
+  detectedKey?: string;
 }
 
 /**
@@ -108,22 +124,45 @@ export async function generatePdf(
       // Fit with margins
       const margin = 28;
       const maxWidth = A4_WIDTH - margin * 2;
-      const maxHeight = A4_HEIGHT - margin * 2 - 20;
+      const maxHeight = A4_HEIGHT - margin * 2 - 24;
 
       const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
       const drawWidth = image.width * scale;
       const drawHeight = image.height * scale;
       const x = (A4_WIDTH - drawWidth) / 2;
-      const y = (A4_HEIGHT - drawHeight) / 2 + 10;
+      const y = (A4_HEIGHT - drawHeight) / 2 + 8;
+
+      // Draw Top Annotation Banner
+      const keyStr = meta.detectedKey ? `TOM: ${meta.detectedKey}` : 'TOM: Si b Maior';
+      const fingeringStr = getFingeringGuide(meta.instrument);
+      const headerStr = sanitizeWinAnsi(`${keyStr}  |  ${meta.instrument.toUpperCase()}  |  ${fingeringStr}`);
+
+      page.drawRectangle({
+        x: margin,
+        y: A4_HEIGHT - margin - 14,
+        width: maxWidth,
+        height: 14,
+        color: rgb(0.96, 0.96, 0.98),
+        borderColor: rgb(0.82, 0.82, 0.88),
+        borderWidth: 0.5,
+      });
+
+      page.drawText(headerStr, {
+        x: margin + 6,
+        y: A4_HEIGHT - margin - 10,
+        font: helveticaBold,
+        size: 7,
+        color: rgb(0.15, 0.15, 0.35)
+      });
 
       page.drawImage(image, { x, y, width: drawWidth, height: drawHeight });
 
       // Footer
       page.drawText(sanitizeWinAnsi(`${meta.scoreTitle} - ${meta.instrument} - Pág. ${meta.pageNumber}`), {
         x: margin,
-        y: 16,
+        y: 12,
         font: helvetica,
-        size: 9,
+        size: 8,
         color: rgb(0.4, 0.4, 0.4)
       });
     }
@@ -150,14 +189,37 @@ export async function generatePdf(
         const x = (A4_WIDTH - drawW) / 2;
         const y = halfHeight + (halfHeight - drawH) / 2;
 
+        // Top Banner for Page i
+        const keyStr = meta.detectedKey ? `TOM: ${meta.detectedKey}` : 'TOM: Si b Maior';
+        const fingeringStr = getFingeringGuide(meta.instrument);
+        const headerStr = sanitizeWinAnsi(`${keyStr}  |  ${meta.instrument.toUpperCase()}  |  ${fingeringStr}`);
+
+        sheet.drawRectangle({
+          x: margin,
+          y: A4_HEIGHT - margin - 12,
+          width: maxW,
+          height: 12,
+          color: rgb(0.96, 0.96, 0.98),
+          borderColor: rgb(0.82, 0.82, 0.88),
+          borderWidth: 0.5,
+        });
+
+        sheet.drawText(headerStr, {
+          x: margin + 4,
+          y: A4_HEIGHT - margin - 9,
+          font: helveticaBold,
+          size: 6.5,
+          color: rgb(0.15, 0.15, 0.35)
+        });
+
         sheet.drawImage(image, { x, y, width: drawW, height: drawH });
 
         // Mini footer top
         sheet.drawText(sanitizeWinAnsi(`${meta.scoreTitle} - ${meta.instrument} (Pág. ${meta.pageNumber})`), {
           x: margin + 4,
-          y: halfHeight + 10,
+          y: halfHeight + 8,
           font: helvetica,
-          size: 8,
+          size: 7.5,
           color: rgb(0.45, 0.45, 0.45)
         });
       }
@@ -191,14 +253,37 @@ export async function generatePdf(
         const x = (A4_WIDTH - drawW) / 2;
         const y = (halfHeight - drawH) / 2;
 
+        // Banner Bottom Half
+        const keyStr = meta.detectedKey ? `TOM: ${meta.detectedKey}` : 'TOM: Si b Maior';
+        const fingeringStr = getFingeringGuide(meta.instrument);
+        const headerStr = sanitizeWinAnsi(`${keyStr}  |  ${meta.instrument.toUpperCase()}  |  ${fingeringStr}`);
+
+        sheet.drawRectangle({
+          x: margin,
+          y: halfHeight - margin - 12,
+          width: maxW,
+          height: 12,
+          color: rgb(0.96, 0.96, 0.98),
+          borderColor: rgb(0.82, 0.82, 0.88),
+          borderWidth: 0.5,
+        });
+
+        sheet.drawText(headerStr, {
+          x: margin + 4,
+          y: halfHeight - margin - 9,
+          font: helveticaBold,
+          size: 6.5,
+          color: rgb(0.15, 0.15, 0.35)
+        });
+
         sheet.drawImage(image, { x, y, width: drawW, height: drawH });
 
         // Mini footer bottom
         sheet.drawText(sanitizeWinAnsi(`${meta.scoreTitle} - ${meta.instrument} (Pág. ${meta.pageNumber})`), {
           x: margin + 4,
-          y: 10,
+          y: 8,
           font: helvetica,
-          size: 8,
+          size: 7.5,
           color: rgb(0.45, 0.45, 0.45)
         });
       } else {
@@ -229,21 +314,34 @@ export async function generatePdf(
       const x = (KINDLE_WIDTH - drawW) / 2;
       const y = (KINDLE_HEIGHT - drawH) / 2 + 10;
 
+      // Kindle top header
+      const keyStr = meta.detectedKey ? `TOM: ${meta.detectedKey}` : 'TOM: Si b Maior';
+      const fingeringStr = getFingeringGuide(meta.instrument);
+      const headerStr = sanitizeWinAnsi(`${keyStr}  |  ${meta.instrument.toUpperCase()}  |  ${fingeringStr}`);
+
+      page.drawText(headerStr, {
+        x: margin,
+        y: KINDLE_HEIGHT - 16,
+        font: helveticaBold,
+        size: 9,
+        color: rgb(0.2, 0.2, 0.2)
+      });
+
       page.drawImage(image, { x, y, width: drawW, height: drawH });
 
       // Kindle header/footer text
       page.drawText(sanitizeWinAnsi(`${meta.scoreTitle} - ${meta.instrument} (Kindle 10" Scribe)`), {
         x: margin,
-        y: 14,
+        y: 12,
         font: helveticaBold,
-        size: 10,
+        size: 9,
         color: rgb(0.2, 0.2, 0.2)
       });
       page.drawText(sanitizeWinAnsi(`Página ${meta.pageNumber}`), {
         x: KINDLE_WIDTH - margin - 60,
-        y: 14,
+        y: 12,
         font: helvetica,
-        size: 10,
+        size: 9,
         color: rgb(0.3, 0.3, 0.3)
       });
     }

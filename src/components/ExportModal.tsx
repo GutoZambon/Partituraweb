@@ -50,6 +50,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         scoreTitle: score.title || score.fileName.replace(/\.[^/.]+$/, ''),
         instrument: score.instrument,
         pageNumber: idx + 1,
+        detectedKey: score.detectedKey,
       }));
     }
 
@@ -135,6 +136,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             scoreTitle: title || score.title || score.fileName.replace(/\.[^/.]+$/, ''),
             instrument: score.instrument,
             pageNumber: i + 1,
+            detectedKey: score.detectedKey,
           });
         }
       }
