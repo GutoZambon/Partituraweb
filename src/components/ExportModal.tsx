@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ScoreItem, ProcessingOptions, OutputFormat } from '../types/music';
-import { processMusicXml } from '../utils/musicLogic';
+import { processMusicXmlAsync } from '../utils/musicLogic';
 import { generatePdf, downloadPdfBlob, isBlankImage, PageRenderSource } from '../utils/pdfGenerator';
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay';
 import JSZip from 'jszip';
@@ -13,7 +13,8 @@ import {
   Loader2,
   CheckCircle2,
   AlertTriangle,
-  FileCheck
+  FileCheck,
+  Music
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -41,10 +42,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Render score to image pages via invisible DOM container
   const renderScoreToPages = async (score: ScoreItem): Promise<PageRenderSource[]> => {
-    // If the score already has rendered PDF/image pages, return them directly
-    if (score.pdfPages && score.pdfPages.length > 0) {
+    if ((score.originalFileType === 'pdf' || score.originalFileType === 'image') && score.pdfPages && score.pdfPages.length > 0) {
       return score.pdfPages.map((dataUrl, idx) => ({
         dataUrl,
         scoreTitle: score.title || score.fileName.replace(/\.[^/.]+$/, ''),
@@ -55,13 +54,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     }
 
     const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.position = 'absolute';
-    hiddenDiv.style.left = '-9999px';
-    hiddenDiv.style.width = '1000px';
+    hiddenDiv.style.position = 'fixed';
+    hiddenDiv.style.top = '0';
+    hiddenDiv.style.left = '0';
+    // Força a largura exata de um A4 a 96dpi para proporção correta
+    hiddenDiv.style.width = '794px'; 
+    hiddenDiv.style.background = 'white';
+    hiddenDiv.style.opacity = '0';
+    hiddenDiv.style.pointerEvents = 'none';
+    hiddenDiv.style.zIndex = '-9999';
     document.body.appendChild(hiddenDiv);
 
     try {
-      const { processedXml, title } = processMusicXml(
+      const { processedXml, detectedKey } = await processMusicXmlAsync(
         score.xmlContent,
         score.instrument,
         options
@@ -70,23 +75,36 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       const osmd = new OpenSheetMusicDisplay(hiddenDiv, {
         autoResize: false,
         backend: 'svg',
+        pageFormat: 'A4_P', // Força a paginação no formato A4 Retrato
         drawTitle: true,
         drawSubtitle: true,
         drawPartNames: true,
         drawFingerings: true,
         drawLyrics: true,
-        drawingParameters: 'compact',
+        drawingParameters: 'default', // Remove o 'compact' para respeitar as margens
       });
 
       osmd.zoom = 1.0;
       await osmd.load(processedXml);
       osmd.render();
 
+      // Aguarda um pouco mais para garantir que as fontes musicais carregaram no DOM
+      await new Promise(resolve => setTimeout(resolve, 800));
+
       const svgs = hiddenDiv.querySelectorAll('svg');
       const pages: PageRenderSource[] = [];
 
       for (let i = 0; i < svgs.length; i++) {
         const svg = svgs[i];
+        
+        if (!svg.getAttribute('xmlns')) {
+          svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        }
+
+        // Pega as dimensões reais do SVG gerado pelo OSMD
+        const svgWidth = parseFloat(svg.getAttribute('width') || '794');
+        const svgHeight = parseFloat(svg.getAttribute('height') || '1123');
+
         const svgData = new XMLSerializer().serializeToString(svg);
         const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
         const url = URL.createObjectURL(svgBlob);
@@ -95,16 +113,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const dataUrl = await new Promise<string>((resolve) => {
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const scale = 2.0;
-            canvas.width = (svg.clientWidth || 800) * scale;
-            canvas.height = (svg.clientHeight || 1100) * scale;
+            const scale = 2.0; // 2x para impressão nítida
+            canvas.width = svgWidth * scale;
+            canvas.height = svgHeight * scale;
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.fillStyle = '#FFFFFF';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
               ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-              // Blank page check
               if (options.removeBlankPages) {
                 const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 if (isBlankImage(imgData)) {
@@ -115,7 +132,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 }
               }
 
-              const res = canvas.toDataURL('image/png');
+              const res = canvas.toDataURL('image/png', 1.0);
               URL.revokeObjectURL(url);
               resolve(res);
             } else {
@@ -123,7 +140,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               resolve('');
             }
           };
-          img.onerror = () => {
+          img.onerror = (err) => {
+            console.error("Erro ao converter SVG para Imagem:", err);
             URL.revokeObjectURL(url);
             resolve('');
           };
@@ -133,10 +151,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         if (dataUrl) {
           pages.push({
             dataUrl,
-            scoreTitle: title || score.title || score.fileName.replace(/\.[^/.]+$/, ''),
+            scoreTitle: score.title || score.fileName.replace(/\.[^/.]+$/, ''),
             instrument: score.instrument,
             pageNumber: i + 1,
-            detectedKey: score.detectedKey,
+            detectedKey: detectedKey || score.detectedKey,
           });
         }
       }
@@ -168,7 +186,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       for (let i = 0; i < validScores.length; i++) {
         const score = validScores[i];
-        setProgressMsg(`Renderizando e anotando: ${score.fileName} (${i + 1}/${validScores.length})...`);
+        setProgressMsg(`Processando no Python e renderizando: ${score.fileName} (${i + 1}/${validScores.length})...`);
         const pages = await renderScoreToPages(score);
         allPages.push(...pages);
       }
@@ -264,7 +282,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-xs text-red-800">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -277,9 +295,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           {generatedFiles.length === 0 ? (
             <div className="space-y-4">
+              
+              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 text-xs space-y-2 text-stone-700">
+                <div className="font-semibold text-indigo-900 flex items-center gap-1.5">
+                  <Music className="w-4 h-4" />
+                  Anotações Musicais a serem aplicadas:
+                </div>
+                <ul className="space-y-1 list-disc list-inside ml-1">
+                  {options.addFingerings && <li>Posições de Pistos / Varas</li>}
+                  {options.addNoteNames && <li>Nomes das Notas em Português</li>}
+                  {options.addKeyHeader && <li>Tom da Música no 1º Compasso</li>}
+                  {options.transposeSolToFa && <li>Transposição Clave Sol ➔ Fá (se aplicável)</li>}
+                  {!options.addFingerings && !options.addNoteNames && !options.addKeyHeader && !options.transposeSolToFa && (
+                    <li className="text-stone-500 italic list-none">Nenhuma anotação musical selecionada.</li>
+                  )}
+                </ul>
+              </div>
+
               <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 text-xs space-y-2 text-stone-600">
-                <div className="font-semibold text-stone-900">Formatos Selecionados:</div>
-                <ul className="space-y-1 list-disc list-inside">
+                <div className="font-semibold text-stone-900">Formatos de Saída Selecionados:</div>
+                <ul className="space-y-1 list-disc list-inside ml-1">
                   {options.outputFormats.map((f) => (
                     <li key={f}>
                       {f === 'caderninho_a5' && 'Caderninho A5 (2 por folha A4 retrato empilhadas)'}
@@ -289,8 +324,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   ))}
                 </ul>
                 {options.removeBlankPages && (
-                  <p className="text-emerald-700 font-medium pt-1">
-                    ✓ Remoção de páginas em branco ativada
+                  <p className="text-emerald-700 font-medium pt-2 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Remoção de páginas em branco ativada
                   </p>
                 )}
               </div>
@@ -304,7 +339,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Gerando Arquivos...</span>
+                    <span>Processando...</span>
                   </>
                 ) : (
                   <>
@@ -315,7 +350,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </button>
 
               {progressMsg && (
-                <div className="text-center text-xs font-mono text-stone-500 animate-pulse">
+                <div className="text-center text-xs font-mono text-indigo-600 animate-pulse bg-indigo-50 py-2 rounded-lg">
                   {progressMsg}
                 </div>
               )}

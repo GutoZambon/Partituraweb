@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay';
 import { ScoreItem, ProcessingOptions } from '../types/music';
-import { processMusicXml } from '../utils/musicLogic';
-import { ZoomIn, ZoomOut, RotateCcw, AlertTriangle, Music, CheckCircle } from 'lucide-react';
+import { processMusicXmlAsync } from '../utils/musicLogic';
+import { ZoomIn, ZoomOut, RotateCcw, AlertTriangle, Music, CheckCircle, Loader2 } from 'lucide-react';
 
 interface ScoreViewerProps {
   score: ScoreItem | null;
@@ -33,12 +33,10 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
 
     const renderScore = async () => {
       try {
-        // Clear container
         if (containerRef.current) {
           containerRef.current.innerHTML = '';
         }
 
-        // Case A: Render directly from PDF / Image pages
         if (score.pdfPages && score.pdfPages.length > 0) {
           score.pdfPages.forEach((pageUrl, idx) => {
             const pageCard = document.createElement('div');
@@ -66,8 +64,8 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           return;
         }
 
-        // Case B: Render from MusicXML
-        const { processedXml, detectedKey } = processMusicXml(
+        // Chamada assíncrona para a API que executa o Python no backend
+        const { processedXml, detectedKey } = await processMusicXmlAsync(
           score.xmlContent,
           score.instrument,
           options
@@ -77,7 +75,6 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         setActiveXml(processedXml);
         setActiveKey(detectedKey);
 
-        // Initialize OSMD
         const osmd = new OpenSheetMusicDisplay(containerRef.current!, {
           autoResize: true,
           backend: 'svg',
@@ -95,7 +92,6 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
 
         osmdRef.current = osmd;
 
-        // Collect rendered SVG pages for PDF generation
         if (containerRef.current) {
           const svgs = containerRef.current.querySelectorAll('svg');
           const pageDataUrls: string[] = [];
@@ -106,12 +102,10 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
             const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
             const url = URL.createObjectURL(svgBlob);
 
-            // Convert SVG to Canvas image to get raster PNG for pdf-lib
             const img = new Image();
             await new Promise<void>((resolve) => {
               img.onload = () => {
                 const canvas = document.createElement('canvas');
-                // High DPI for crisp print quality
                 const scale = 2.0;
                 canvas.width = (svg.clientWidth || 800) * scale;
                 canvas.height = (svg.clientHeight || 1100) * scale;
@@ -174,7 +168,6 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
 
   return (
     <div className="bg-white border border-stone-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
-      {/* Score Header & Controls */}
       <div className="px-5 py-3 border-b border-stone-100 flex flex-wrap items-center justify-between gap-3 bg-stone-50/70">
         <div className="space-y-0.5">
           <div className="flex items-center gap-2">
@@ -192,7 +185,6 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           )}
         </div>
 
-        {/* Zoom controls */}
         <div className="flex items-center gap-1.5 bg-white border border-stone-200 rounded-lg p-1">
           <button
             type="button"
@@ -224,7 +216,6 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         </div>
       </div>
 
-      {/* Render Error Alert */}
       {renderError && (
         <div className="m-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-800">
           <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -235,16 +226,22 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         </div>
       )}
 
-      {/* Sheet Music Canvas Area */}
-      <div className="p-6 bg-stone-100/50 min-h-[460px] flex items-center justify-center overflow-auto max-h-[720px]">
+      {/* Overlay de carregamento posicionado de forma absoluta sobre o canvas */}
+      <div className="p-6 bg-stone-100/50 min-h-[460px] flex items-center justify-center overflow-auto max-h-[720px] relative">
+        {isRendering && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-stone-100/80 backdrop-blur-sm">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-3" />
+            <p className="text-sm font-semibold text-stone-800">Processando partitura...</p>
+            <p className="text-xs text-stone-500 mt-1">Adicionando notas e posições via Python</p>
+          </div>
+        )}
         <div
           ref={containerRef}
           className="bg-white p-6 rounded-lg shadow-sm border border-stone-200/80 w-full max-w-4xl min-h-[400px] flex flex-col items-center justify-center transition-opacity"
-          style={{ opacity: isRendering ? 0.6 : 1 }}
+          style={{ opacity: isRendering ? 0.3 : 1 }}
         />
       </div>
 
-      {/* Bottom Info Bar */}
       <div className="px-5 py-2.5 border-t border-stone-100 bg-white flex flex-wrap items-center justify-between text-xs text-stone-500 font-mono">
         <div className="flex items-center gap-3">
           <span>Dedilhado: {options.addFingerings ? 'Ativo' : 'Oculto'}</span>

@@ -1,0 +1,29 @@
+# Usa uma imagem base do Node.js
+FROM node:22-slim
+
+# Instala o Python 3 e o pip
+RUN apt-get update && apt-get install -y python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
+
+# Cria um ambiente virtual Python e instala o music21
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install music21
+
+# Configura o diretório de trabalho
+WORKDIR /app
+
+# Copia os arquivos de dependência do Node
+COPY package*.json ./
+RUN npm install
+
+# Copia o resto do código do projeto
+COPY . .
+
+# Compila o frontend (Vite)
+RUN npm run build
+
+# Expõe a porta
+EXPOSE 3000
+
+# Inicia o servidor
+CMD ["npm", "start"]
