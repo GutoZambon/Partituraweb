@@ -82,14 +82,14 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
     
     # 1. Transposição Clave de Sol -> Fá (-9M) para Bombardino e Trombone
     if transpose_sol_fa and instrument_name in ["Bombardino", "Trombone"]:
-        clefs = list(score.recurse().getElementsByClass('Clef'))
-        has_treble = any(c.sign == 'G' for c in clefs)
+        has_treble = any(c.sign == 'G' for c in score.recurse().getElementsByClass('Clef'))
         if has_treble:
             score.transpose('-M9', inPlace=True)
-            for el in score.recurse():
-                if 'Clef' in el.classes and el.sign == 'G':
-                    el.sign = 'F'
-                    el.line = 4
+            for c in score.recurse().getElementsByClass('Clef'):
+                if c.sign == 'G':
+                    nova_clave = music21.clef.BassClef()
+                    if c.activeSite is not None:
+                        c.activeSite.replace(c, nova_clave)
 
     # 2. Tom da Música
     key_signatures = list(score.recurse().getElementsByClass('KeySignature'))
@@ -111,27 +111,37 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
 
     # 3. Pistos e Nomes das Notas
     mapa = MAPEAMENTOS.get(instrument_name)
-    for el in score.recurse():
-        if 'Note' in el.classes and not el.isRest and not el.isChord:
-            note_obj = el
-            midi_val = note_obj.pitch.midi
-            nome_pt = obter_nome_pt(note_obj.pitch)
-
-            # Remover lyrics anteriores
-            note_obj.lyrics = []
-
-            # Lyric 1: Nome da Nota em Português
+    
+    # Iterar especificamente sobre as notas (inclui acordes)
+    for nota in score.recurse().notes:
+        if nota.isNote:
+            nota.lyrics = [] # Limpa sujeiras do XML original
+            
             if add_note_names:
-                l1 = music21.note.Lyric(text=nome_pt, number=1)
-                note_obj.lyrics.append(l1)
-
-            # Lyric 2: Pisto / Posição de Vara
+                nome_pt = obter_nome_pt(nota.pitch)
+                nota.addLyric(nome_pt, lyricNumber=1)
+                
             if add_fingerings and mapa:
-                chave_qml = midi_val - 18
+                chave_qml = nota.pitch.midi - 18
                 dedilhado = mapa.get(chave_qml)
                 if dedilhado:
-                    l2 = music21.note.Lyric(text=dedilhado, number=2)
-                    note_obj.lyrics.append(l2)
+                    nota.addLyric(dedilhado, lyricNumber=2)
+                    
+        elif nota.isChord:
+            nota.lyrics = [] # Limpa sujeiras do XML original
+            
+            # Processa a primeira nota do acorde (resolve o bug do Audiveris)
+            for n in nota:
+                if add_note_names:
+                    nome_pt = obter_nome_pt(n.pitch)
+                    nota.addLyric(nome_pt, lyricNumber=1) # Adiciona no objeto 'nota' (acorde) para alinhar
+                    
+                if add_fingerings and mapa:
+                    chave_qml = n.pitch.midi - 18
+                    dedilhado = mapa.get(chave_qml)
+                    if dedilhado:
+                        nota.addLyric(dedilhado, lyricNumber=2)
+                break # Garante que apenas a nota principal receba texto
 
     # Exportar MusicXML
     out_path = xml_path + ".processed.xml"
