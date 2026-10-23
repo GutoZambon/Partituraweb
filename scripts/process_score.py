@@ -1,10 +1,11 @@
-#!/usr/bin/env python3
 import sys
 import xml.etree.ElementTree as ET
 import music21
 
-# Mapeamentos extraídos do script Python original (QML / music21)
-# Chave = MIDI note - 18
+def debug(msg):
+    # Imprime no stderr para o Node.js capturar como log
+    print(f"[PYTHON DEBUG] {msg}", file=sys.stderr)
+
 MAPA_TROMPETE = {
     34: "1-2-3", 35: "1-3", 36: "2-3", 37: "1-2", 38: "1", 39: "2", 40: "0",
     41: "1-2-3", 42: "1-3", 43: "2-3", 44: "1-2", 45: "1", 46: "2", 47: "0",
@@ -77,15 +78,10 @@ def obter_nome_pt(pitch):
             nome += 'bb'
     return nome
 
-def debug(msg):
-    import sys
-    print(f"[PYTHON DEBUG] {msg}", file=sys.stderr)
-
 def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_names=True, add_key=True, transpose_sol_fa=True):
     debug(f"Iniciando processamento. Instrumento recebido: '{instrument_name}'")
     score = music21.converter.parse(xml_path)
     
-    # 1. Transposição Clave de Sol -> Fá (-9M) para Bombardino e Trombone
     if transpose_sol_fa and instrument_name in ["Bombardino", "Trombone"]:
         has_treble = any(c.sign == 'G' for c in score.recurse().getElementsByClass('Clef'))
         if has_treble:
@@ -97,7 +93,6 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
                     if c.activeSite is not None:
                         c.activeSite.replace(c, nova_clave)
 
-    # 2. Tom da Música
     key_signatures = list(score.recurse().getElementsByClass('KeySignature'))
     detected_key = "Desconhecido"
     if key_signatures:
@@ -110,12 +105,12 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
         measures = list(score.recurse().getElementsByClass('Measure'))
         if measures:
             m1 = measures[0]
-            tb = music21.text.TextExpression(f"Tom: {detected_key}")
+            # CORREÇÃO: Usando expressions.TextExpression
+            tb = music21.expressions.TextExpression(f"Tom: {detected_key}")
             tb.style.fontSize = 11
             tb.style.fontWeight = 'bold'
             m1.insert(0, tb)
 
-    # 3. Pistos e Nomes das Notas
     mapa = MAPEAMENTOS.get(instrument_name)
     if mapa:
         debug(f"Mapa de dedilhado encontrado com {len(mapa)} posições.")
@@ -138,7 +133,6 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
                 chave_qml = nota.pitch.midi - 18
                 dedilhado = mapa.get(chave_qml)
                 
-                # Log detalhado das 5 primeiras notas para diagnóstico
                 if notas_processadas <= 5:
                     debug(f"Nota {notas_processadas}: {nota.pitch.nameWithOctave} | MIDI: {nota.pitch.midi} | Chave QML: {chave_qml} | Dedilhado: {dedilhado}")
                 
@@ -174,7 +168,7 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Uso: process_score.py <caminho_xml> <instrumento>")
+        debug("Uso: process_score.py <caminho_xml> <instrumento>")
         sys.exit(1)
     
     xml_p = sys.argv[1]

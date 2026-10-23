@@ -57,9 +57,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     hiddenDiv.style.position = 'fixed';
     hiddenDiv.style.top = '0';
     hiddenDiv.style.left = '0';
-    // Força a largura exata de um A4 a 96dpi para proporção correta
-    hiddenDiv.style.width = '794px'; 
-    hiddenDiv.style.height = '1123px'; // Altura A4 (96dpi) - ISSO EVITA QUE FIQUE ESPREMIDO
+    hiddenDiv.style.width = '794px'; // Largura A4 a 96dpi
+    hiddenDiv.style.height = '1123px'; // Altura A4 a 96dpi (EVITA O ACHATAMENTO)
     hiddenDiv.style.background = 'white';
     hiddenDiv.style.opacity = '0';
     hiddenDiv.style.pointerEvents = 'none';
@@ -76,20 +75,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       const osmd = new OpenSheetMusicDisplay(hiddenDiv, {
         autoResize: false,
         backend: 'svg',
-        pageFormat: 'A4_P', // Força a paginação no formato A4 Retrato
+        pageFormat: 'A4_P',
         drawTitle: true,
         drawSubtitle: true,
         drawPartNames: true,
         drawFingerings: true,
         drawLyrics: true,
-        drawingParameters: 'default', // Remove o 'compact' para respeitar as margens
+        drawingParameters: 'default',
       });
 
       osmd.zoom = 1.0;
       await osmd.load(processedXml);
       osmd.render();
 
-      // Aguarda um pouco mais para garantir que as fontes musicais carregaram no DOM
       await new Promise(resolve => setTimeout(resolve, 800));
 
       const svgs = hiddenDiv.querySelectorAll('svg');
@@ -102,9 +100,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
         }
 
-        // Pega as dimensões reais do SVG gerado pelo OSMD
-        const svgWidth = parseFloat(svg.getAttribute('width') || '794');
-        const svgHeight = parseFloat(svg.getAttribute('height') || '1123');
+        // CORREÇÃO: Pega as dimensões reais do DOM para evitar que "100%" quebre o Canvas
+        const rect = svg.getBoundingClientRect();
+        const svgWidth = rect.width > 0 ? rect.width : 794;
+        const svgHeight = rect.height > 0 ? rect.height : 1123;
+        
+        svg.setAttribute('width', `${svgWidth}px`);
+        svg.setAttribute('height', `${svgHeight}px`);
 
         const svgData = new XMLSerializer().serializeToString(svg);
         const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
@@ -114,7 +116,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const dataUrl = await new Promise<string>((resolve) => {
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const scale = 2.0; // 2x para impressão nítida
+            const scale = 2.0;
             canvas.width = svgWidth * scale;
             canvas.height = svgHeight * scale;
             const ctx = canvas.getContext('2d');
@@ -263,7 +265,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white border border-stone-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
           <div>
             <h3 className="text-base font-semibold text-stone-900">
@@ -282,7 +283,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-xs text-red-800">

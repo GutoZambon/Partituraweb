@@ -1,9 +1,6 @@
 import JSZip from 'jszip';
 import { ProcessingOptions, InstrumentType } from '../types/music';
 
-/**
- * Unzips MXL file if needed and returns MusicXML string
- */
 export async function extractMusicXml(bufferOrString: ArrayBuffer | string): Promise<string> {
   if (typeof bufferOrString === 'string') {
     if (bufferOrString.trim().startsWith('<') || bufferOrString.includes('<score-partwise')) {
@@ -64,11 +61,16 @@ export async function processMusicXmlAsync(
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
+      if (errData.debugLogs) {
+        console.error("[PYTHON ERROR LOGS]:\n", errData.debugLogs);
+      }
       throw new Error(errData.error || `Erro no servidor: ${response.statusText}`);
     }
 
     const data = await response.json();
     console.log(`[Frontend] Sucesso! Tom detectado: ${data.detectedKey}`);
+    
+    // IMPRIME OS LOGS DO PYTHON NO CONSOLE DO NAVEGADOR
     if (data.debugLogs) {
       console.log("%c--- LOGS DO PYTHON ---", "color: #4f46e5; font-weight: bold;");
       console.log(data.debugLogs);
