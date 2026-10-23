@@ -1,0 +1,6 @@
+{
+  "name": "PartiturasWeb - Metais & Impressão",
+  "description": "Processamento inteligente de partituras para Trompete, Trombone, Tuba e Bombardino: anotação de pistos, nomes de notas, tom, Caderninho A5 2-em-1 e Kindle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
