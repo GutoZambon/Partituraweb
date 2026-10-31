@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { InstrumentType, ScoreItem } from '../types/music';
 import { Upload, FileUp, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
-import { extractMusicXml } from '../utils/musicLogic';
+import { extractMusicXml, convertMsczFile } from '../utils/musicLogic';
 import { SAMPLE_SCORES } from '../utils/sampleScores';
 import { renderPdfToImages } from '../utils/pdfReader';
 
@@ -66,6 +66,19 @@ export const DropZone: React.FC<DropZoneProps> = ({
             instrument: selectedDefaultInstrument,
             xmlContent: xml,
             status: 'ready'
+          });
+        } else if (ext === 'mscz' || ext === 'mscx') {
+          setStatusMessage(`Convertendo partitura MuseScore (${file.name}) no servidor...`);
+          const { xmlContent, pageImages } = await convertMsczFile(file);
+          newScores.push({
+            id: crypto.randomUUID(),
+            fileName: file.name,
+            originalFileType: ext as 'mscz' | 'mscx',
+            instrument: selectedDefaultInstrument,
+            xmlContent: xmlContent,
+            pdfPages: pageImages && pageImages.length > 0 ? pageImages : undefined,
+            pageCount: pageImages && pageImages.length > 0 ? pageImages.length : 1,
+            status: 'ready',
           });
         } else if (ext === 'pdf') {
           setStatusMessage(`Processando páginas da partitura PDF: ${file.name}...`);
@@ -205,7 +218,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.png,.jpg,.jpeg,.xml,.mxl,.musicxml"
+          accept=".mscz,.mscx,.pdf,.png,.jpg,.jpeg,.xml,.mxl,.musicxml"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />
@@ -226,7 +239,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
                 : 'Arraste as partituras aqui ou clique para selecionar'}
             </p>
             <p className="text-xs text-stone-500 mt-1">
-              Suporta PDFs escaneados, fotos (.png, .jpg) e arquivos nativos MusicXML (.xml, .mxl)
+              Suporta arquivos MuseScore (.mscz, .mscx), MusicXML (.xml, .mxl), PDFs e imagens (.png, .jpg)
             </p>
           </div>
 

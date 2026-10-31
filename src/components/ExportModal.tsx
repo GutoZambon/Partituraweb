@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ScoreItem, ProcessingOptions, OutputFormat } from '../types/music';
-import { processMusicXmlAsync } from '../utils/musicLogic';
+import { processMusicXmlAsync, renderScoreWithMuseScore, exportMsczWithMuseScore } from '../utils/musicLogic';
 import { generatePdf, downloadPdfBlob, isBlankImage, PageRenderSource } from '../utils/pdfGenerator';
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay';
 import JSZip from 'jszip';
@@ -72,6 +72,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         options
       );
 
+      // 1. Tenta renderizar nativamente com o MuseScore 3 no servidor (qualidade gráfica máxima)
+      try {
+        const msPages = await renderScoreWithMuseScore(processedXml);
+        if (msPages && msPages.length > 0) {
+          console.log(`[MuseScore Server] ${msPages.length} página(s) renderizadas com tipografia nativa do MuseScore.`);
+          return msPages.map((dataUrl, idx) => ({
+            dataUrl,
+            scoreTitle: score.title || score.fileName.replace(/\.[^/.]+$/, ''),
+            instrument: score.instrument,
+            pageNumber: idx + 1,
+            detectedKey: detectedKey || score.detectedKey,
+          }));
+        }
+      } catch (msErr) {
+        console.warn('Renderizador MuseScore falhou, utilizando fallback OSMD:', msErr);
+      }
+
+      // 2. Fallback: renderizador OSMD local
       const osmd = new OpenSheetMusicDisplay(hiddenDiv, {
         autoResize: false,
         backend: 'svg',
@@ -262,6 +280,33 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const handleDownloadMscz = async (score: ScoreItem) => {
+    try {
+      setProgressMsg('Exportando arquivo MuseScore (.mscz)...');
+      const { processedXml } = await processMusicXmlAsync(score.xmlContent, score.instrument, options);
+      const res = await exportMsczWithMuseScore(processedXml, score.fileName);
+      const byteCharacters = atob(res.base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/x-musescore' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setProgressMsg('Arquivo MuseScore (.mscz) baixado!');
+    } catch (err: any) {
+      console.error('Falha ao exportar .mscz:', err);
+      setErrorMsg('Falha ao exportar .mscz: ' + (err?.message || ''));
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white border border-stone-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -402,6 +447,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   <FileCheck className="w-4 h-4" />
                   <span>Baixar Todos em Arquivo .ZIP</span>
                 </button>
+              )}
+
+              {scores.some((s) => s.xmlContent && s.xmlContent.trim().length > 0) && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const xmlScore = scores.find((s) => s.xmlContent && s.xmlContent.trim().length > 0);
+                      if (xmlScore) handleDownloadMscz(xmlScore);
+                    }}
+                    className="w-full py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 border border-indigo-200"
+                  >
+                    <Music className="w-4 h-4" />
+                    <span>Baixar Arquivo MuseScore (.MSCZ) com Anotações</span>
+                  </button>
+                </div>
               )}
 
               <button

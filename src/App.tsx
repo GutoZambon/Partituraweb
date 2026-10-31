@@ -133,7 +133,7 @@ export default function App() {
               Processamento Inteligente de Partituras para Metais
             </h1>
             <p className="text-sm text-stone-600 leading-relaxed">
-              Adicione posições de pisto, posições de vara (1–7), nomes de notas em português, detecção automática do tom no primeiro compasso e diagramação direta para Caderninho A5 e Kindle 10''.
+              Compatibilidade nativa com MuseScore (.mscz, .mscx), MusicXML e PDFs. Adicione posições de pisto, posições de vara (1–7), nomes de notas em português, detecção automática do tom no primeiro compasso e diagramação direta para Caderninho A5 e Kindle 10''.
             </p>
           </div>
 

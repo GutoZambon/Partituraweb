@@ -39,6 +39,101 @@ export async function extractMusicXml(bufferOrString: ArrayBuffer | string): Pro
   return typeof bufferOrString === 'string' ? bufferOrString : '';
 }
 
+/**
+ * Converte arquivo nativo do MuseScore (.mscz ou .mscx) para MusicXML e imagens de página pelo servidor
+ */
+export async function convertMsczFile(
+  file: File
+): Promise<{ xmlContent: string; pageImages: string[]; fileName: string }> {
+  const reader = new FileReader();
+  const base64Promise = new Promise<string>((resolve, reject) => {
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const fileBase64 = await base64Promise;
+
+  const response = await fetch('/api/convert-mscz', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileBase64,
+      fileName: file.name
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.details || err.error || 'Falha ao converter arquivo MuseScore.');
+  }
+
+  return await response.json();
+}
+
+/**
+ * Renderiza páginas completas da partitura em PNG de alta definição diretamente pelo MuseScore no servidor
+ */
+export async function renderScoreWithMuseScore(
+  xmlContent: string
+): Promise<string[]> {
+  const response = await fetch('/api/musescore/render-pages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ xmlContent })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.details || err.error || 'Falha ao renderizar com MuseScore.');
+  }
+
+  const data = await response.json();
+  return data.pages || [];
+}
+
+/**
+ * Exporta a partitura com anotações para o formato nativo .mscz do MuseScore
+ */
+export async function exportMsczWithMuseScore(
+  xmlContent: string,
+  fileName: string
+): Promise<{ base64Data: string; fileName: string }> {
+  const response = await fetch('/api/musescore/export-mscz', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ xmlContent, fileName })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.details || err.error || 'Falha ao exportar .mscz.');
+  }
+
+  return await response.json();
+}
+
+/**
+ * Exporta a partitura diretamente para PDF com o motor do MuseScore
+ */
+export async function exportPdfWithMuseScore(
+  xmlContent: string,
+  fileName: string
+): Promise<{ base64Data: string; fileName: string }> {
+  const response = await fetch('/api/musescore/export-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ xmlContent, fileName })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.details || err.error || 'Falha ao gerar PDF no MuseScore.');
+  }
+
+  return await response.json();
+}
+
 export async function processMusicXmlAsync(
   xmlContent: string,
   instrument: InstrumentType,
@@ -70,7 +165,6 @@ export async function processMusicXmlAsync(
     const data = await response.json();
     console.log(`[Frontend] Sucesso! Tom detectado: ${data.detectedKey}`);
     
-    // IMPRIME OS LOGS DO PYTHON NO CONSOLE DO NAVEGADOR
     if (data.debugLogs) {
       console.log("%c--- LOGS DO PYTHON ---", "color: #4f46e5; font-weight: bold;");
       console.log(data.debugLogs);

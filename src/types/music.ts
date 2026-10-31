@@ -5,7 +5,7 @@ export type OutputFormat = 'caderninho_a5' | 'kindle_10' | 'normal_a4';
 export interface ScoreItem {
   id: string;
   fileName: string;
-  originalFileType: 'pdf' | 'image' | 'xml' | 'mxl';
+  originalFileType: 'pdf' | 'image' | 'xml' | 'mxl' | 'mscz' | 'mscx';
   instrument: InstrumentType;
   fileData?: string; // base64 or text
   xmlContent: string;
