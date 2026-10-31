@@ -78,12 +78,13 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         const osmd = new OpenSheetMusicDisplay(containerRef.current!, {
           autoResize: true,
           backend: 'svg',
+          pageFormat: 'A4_P',
           drawTitle: true,
           drawSubtitle: true,
           drawPartNames: true,
           drawFingerings: true,
           drawLyrics: true,
-          drawingParameters: 'compact',
+          drawingParameters: 'default',
         });
 
         osmd.zoom = zoom;
@@ -185,23 +186,23 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 bg-white border border-stone-200 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 sm:p-1 shrink-0">
           <button
             type="button"
             onClick={handleZoomOut}
             title="Reduzir Zoom"
-            className="p-1 rounded hover:bg-stone-100 text-stone-600 transition-colors"
+            className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded hover:bg-stone-100 text-stone-600 active:bg-stone-200 transition-colors"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          <span className="text-xs font-mono px-2 text-stone-700 tabular-nums">
+          <span className="text-xs font-mono px-1.5 sm:px-2 text-stone-700 tabular-nums">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
             onClick={handleZoomIn}
             title="Aumentar Zoom"
-            className="p-1 rounded hover:bg-stone-100 text-stone-600 transition-colors"
+            className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded hover:bg-stone-100 text-stone-600 active:bg-stone-200 transition-colors"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
@@ -209,7 +210,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
             type="button"
             onClick={handleResetZoom}
             title="Ajustar ao tamanho normal"
-            className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors"
+            className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded hover:bg-stone-100 text-stone-400 hover:text-stone-700 active:bg-stone-200 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -217,7 +218,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
       </div>
 
       {renderError && (
-        <div className="m-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-800">
+        <div className="m-3 sm:m-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2.5 text-xs text-red-800">
           <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-semibold">Erro ao renderizar partitura graficamente</p>
@@ -226,10 +227,10 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         </div>
       )}
 
-      {/* Overlay de carregamento posicionado de forma absoluta sobre o canvas */}
-      <div className="p-6 bg-stone-100/50 min-h-[460px] flex items-center justify-center overflow-auto max-h-[720px] relative">
+      {/* Overlay de carregamento e container de exibição */}
+      <div className="p-2 sm:p-6 bg-stone-100/50 min-h-[360px] sm:min-h-[460px] flex items-start sm:items-center justify-center overflow-x-auto overflow-y-auto max-h-[75vh] relative touch-pan-x touch-pan-y">
         {isRendering && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-stone-100/80 backdrop-blur-sm">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-stone-100/80 backdrop-blur-xs p-4 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-3" />
             <p className="text-sm font-semibold text-stone-800">Processando partitura...</p>
             <p className="text-xs text-stone-500 mt-1">Adicionando notas e posições via Python</p>
@@ -237,7 +238,7 @@ export const ScoreViewer: React.FC<ScoreViewerProps> = ({
         )}
         <div
           ref={containerRef}
-          className="bg-white p-6 rounded-lg shadow-sm border border-stone-200/80 w-full max-w-4xl min-h-[400px] flex flex-col items-center justify-center transition-opacity"
+          className="bg-white p-3 sm:p-6 rounded-lg shadow-xs border border-stone-200/80 w-full max-w-4xl min-h-[320px] flex flex-col items-center justify-center transition-opacity overflow-x-auto"
           style={{ opacity: isRendering ? 0.3 : 1 }}
         />
       </div>

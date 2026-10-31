@@ -180,21 +180,21 @@ export const DropZone: React.FC<DropZoneProps> = ({
   return (
     <div className="space-y-4">
       {/* Instrumento Padrão Seletor */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-stone-200">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-stone-200">
+        <div className="space-y-1.5 min-w-0">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 block">
             Instrumento Destino:
           </span>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x">
             {instrumentsList.map(inst => (
               <button
                 key={inst}
                 type="button"
                 onClick={() => onChangeDefaultInstrument(inst)}
-                className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                   selectedDefaultInstrument === inst
-                    ? 'bg-stone-900 text-white'
-                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200 active:bg-stone-300'
                 }`}
               >
                 {inst}
@@ -203,14 +203,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={loadSampleScores}
-          className="text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/80 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Carregar Partituras de Demonstração</span>
-        </button>
+       
       </div>
 
       {/* Upload Drop Area */}
@@ -226,7 +219,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
           handleFiles(e.dataTransfer.files);
         }}
         onClick={() => !isProcessing && fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+        className={`border-2 border-dashed rounded-xl p-5 sm:p-8 text-center cursor-pointer transition-all ${
           isDragging
             ? 'border-indigo-600 bg-indigo-50/50 scale-[0.99]'
             : 'border-stone-300 hover:border-indigo-400 bg-white hover:bg-stone-50/50'
@@ -242,7 +235,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
         />
 
         <div className="max-w-md mx-auto space-y-3">
-          <div className="w-12 h-12 mx-auto rounded-full bg-stone-100 flex items-center justify-center text-stone-600">
+          <div className="w-12 h-12 mx-auto rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
             {isProcessing ? (
               <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
             ) : (
@@ -251,15 +244,24 @@ export const DropZone: React.FC<DropZoneProps> = ({
           </div>
 
           <div>
-            <p className="text-base font-semibold text-stone-900">
+            <p className="text-sm sm:text-base font-semibold text-stone-900">
               {isProcessing
                 ? 'Processando e analisando partituras...'
-                : 'Arraste as partituras aqui ou clique para selecionar'}
+                : 'Toque para selecionar ou arraste arquivos aqui'}
             </p>
-            <p className="text-xs text-stone-500 mt-1">
-              Suporta arquivos MuseScore (.mscz, .mscx), MusicXML (.xml, .mxl), PDFs e imagens (.png, .jpg)
+            <p className="text-xs text-stone-500 mt-1 leading-relaxed">
+              PDFs escaneados (com Audiveris OMR), MuseScore (.mscz, .mscx) e MusicXML (.xml, .mxl)
             </p>
           </div>
+
+          {!isProcessing && (
+            <div className="pt-1">
+              <span className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Escolher Arquivos</span>
+              </span>
+            </div>
+          )}
 
           {statusMessage && (
             <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-medium text-indigo-900 flex items-center justify-center gap-2">
