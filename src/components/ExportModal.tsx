@@ -308,28 +308,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white border border-stone-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
-        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-stone-100 flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white border border-stone-200 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
           <div>
-            <h3 className="text-sm sm:text-base font-semibold text-stone-900">
-              Exportação & Impressão
+            <h3 className="text-base font-semibold text-stone-900">
+              Exportação & Impressão de Partituras
             </h3>
-            <p className="text-[11px] sm:text-xs text-stone-500">
+            <p className="text-xs text-stone-500">
               {scores.length} partitura(s) na ordem configurada.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Fechar modal"
-            className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-stone-100 active:bg-stone-200 text-stone-400 hover:text-stone-700 transition-colors"
+            className="p-1 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1">
+        <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-xs text-red-800">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -409,19 +408,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <span>Todos os arquivos foram gerados e estão prontos para download!</span>
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {generatedFiles.map((item) => (
                   <div
                     key={item.format}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-stone-50 border border-stone-200 rounded-xl gap-2.5"
+                    className="flex items-center justify-between p-3 bg-stone-50 border border-stone-200 rounded-xl"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {item.format === 'caderninho_a5' && <BookOpen className="w-5 h-5 text-indigo-600 shrink-0" />}
-                      {item.format === 'kindle_10' && <Tablet className="w-5 h-5 text-indigo-600 shrink-0" />}
-                      {item.format === 'normal_a4' && <FileText className="w-5 h-5 text-indigo-600 shrink-0" />}
-                      <div className="min-w-0">
+                    <div className="flex items-center gap-3">
+                      {item.format === 'caderninho_a5' && <BookOpen className="w-5 h-5 text-indigo-600" />}
+                      {item.format === 'kindle_10' && <Tablet className="w-5 h-5 text-indigo-600" />}
+                      {item.format === 'normal_a4' && <FileText className="w-5 h-5 text-indigo-600" />}
+                      <div>
                         <div className="text-xs font-semibold text-stone-900">{item.label}</div>
-                        <div className="text-[11px] text-stone-500 truncate max-w-[240px]">
+                        <div className="text-[11px] text-stone-500 truncate max-w-[200px]">
                           {item.fileName}
                         </div>
                       </div>
@@ -430,10 +429,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     <button
                       type="button"
                       onClick={() => downloadPdfBlob(item.bytes, item.fileName)}
-                      className="w-full sm:w-auto px-4 py-2 bg-white border border-stone-200 hover:border-indigo-600 text-stone-800 hover:text-indigo-600 active:bg-indigo-50 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-2xs shrink-0"
+                      className="px-3 py-1.5 bg-white border border-stone-200 hover:border-indigo-600 text-stone-800 hover:text-indigo-600 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Baixar PDF</span>
+                      <span>Baixar</span>
                     </button>
                   </div>
                 ))}
