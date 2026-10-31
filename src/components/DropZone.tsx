@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { InstrumentType, ScoreItem } from '../types/music';
 import { Upload, FileUp, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
-import { extractMusicXml, convertMsczFile } from '../utils/musicLogic';
+import { extractMusicXml, convertMsczFile, processPdfOmr } from '../utils/musicLogic';
 import { SAMPLE_SCORES } from '../utils/sampleScores';
 import { renderPdfToImages } from '../utils/pdfReader';
 
@@ -81,22 +81,40 @@ export const DropZone: React.FC<DropZoneProps> = ({
             status: 'ready',
           });
         } else if (ext === 'pdf') {
-          setStatusMessage(`Processando páginas da partitura PDF: ${file.name}...`);
-          const arrayBuffer = await file.arrayBuffer();
-          const renderedPages = await renderPdfToImages(arrayBuffer, true);
-          if (renderedPages.length === 0) {
-            throw new Error('O arquivo PDF não possui páginas visíveis de partitura ou todas eram em branco.');
+          setStatusMessage(`Processando PDF com Audiveris OMR no servidor (${file.name})...`);
+          try {
+            const omrResult = await processPdfOmr(file, selectedDefaultInstrument);
+            console.log(`[DropZone] PDF reconhecido via OMR com sucesso: ${file.name}. Tom: ${omrResult.detectedKey}`);
+            newScores.push({
+              id: crypto.randomUUID(),
+              fileName: file.name,
+              originalFileType: 'pdf',
+              instrument: selectedDefaultInstrument,
+              xmlContent: omrResult.processedXml,
+              detectedKey: omrResult.detectedKey,
+              status: 'ready',
+            });
+          } catch (omrErr: any) {
+            console.warn('Audiveris OMR não identificou pautas legíveis ou falhou. Utilizando fallback visual:', omrErr);
+            setStatusMessage(`Extraindo páginas visuais do PDF: ${file.name}...`);
+            const arrayBuffer = await file.arrayBuffer();
+            const renderedPages = await renderPdfToImages(arrayBuffer, true);
+            if (renderedPages.length === 0) {
+              throw omrErr;
+            }
+            newScores.push({
+              id: crypto.randomUUID(),
+              fileName: file.name,
+              originalFileType: 'pdf',
+              instrument: selectedDefaultInstrument,
+              xmlContent: '',
+              pdfPages: renderedPages.map((p) => p.dataUrl),
+              pageCount: renderedPages.length,
+              status: 'ready',
+            });
+            const reason = omrErr.message || 'Pautas não identificadas no scan';
+            setUploadError(`Audiveris OMR no arquivo "${file.name}": ${reason}. O arquivo foi carregado em modo de imagem para permitir visualização e corte em Caderninho A5 / Kindle.`);
           }
-          newScores.push({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            originalFileType: 'pdf',
-            instrument: selectedDefaultInstrument,
-            xmlContent: '',
-            pdfPages: renderedPages.map((p) => p.dataUrl),
-            pageCount: renderedPages.length,
-            status: 'ready',
-          });
         } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
           setStatusMessage(`Carregando imagem da partitura: ${file.name}...`);
           const dataUrl = await readFileAsBase64(file);

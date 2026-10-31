@@ -179,3 +179,35 @@ export async function processMusicXmlAsync(
     throw error;
   }
 }
+
+/**
+ * Envia arquivo PDF para reconhecimento ótico musical (OMR) via Audiveris e anotações via Python
+ */
+export async function processPdfOmr(
+  file: File,
+  instrument: InstrumentType
+): Promise<{ processedXml: string; detectedKey: string; debugLogs?: string }> {
+  const formData = new FormData();
+  formData.append('pdf', file);
+  formData.append('instrument', instrument);
+
+  const response = await fetch('/api/process-pdf', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const errorMsg = data.error || data.details || `Erro no servidor (${response.status})`;
+    const err = new Error(errorMsg) as any;
+    err.debugLogs = data.debugLogs;
+    throw err;
+  }
+
+  return {
+    processedXml: data.processedXml,
+    detectedKey: data.detectedKey || 'Desconhecido',
+    debugLogs: data.debugLogs,
+  };
+}

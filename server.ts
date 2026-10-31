@@ -6,6 +6,7 @@ import { exec } from 'child_process';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import os from 'os';
+import multer from 'multer';
 
 dotenv.config();
 
@@ -18,12 +19,17 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+});
+
 /**
- * Executa comandos headless do MuseScore 3 via Xvfb
+ * Executa comandos headless (MuseScore, Audiveris, etc.) com timeout configurável
  */
-function execCommand(cmd: string): Promise<{ stdout: string; stderr: string }> {
+function execCommand(cmd: string, timeoutMs: number = 60000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    exec(cmd, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
+    exec(cmd, { maxBuffer: 1024 * 1024 * 50, timeout: timeoutMs }, (error, stdout, stderr) => {
       if (error) {
         return reject(new Error(`${error.message}\nStderr: ${stderr}\nStdout: ${stdout}`));
       }
@@ -33,19 +39,44 @@ function execCommand(cmd: string): Promise<{ stdout: string; stderr: string }> {
 }
 
 /**
- * Health check com verificação do MuseScore e Python
+ * Busca recursiva por arquivos .mxl ou .xml em um diretório
+ */
+async function findScoreFiles(dir: string): Promise<string[]> {
+  if (!fsSync.existsSync(dir)) return [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...(await findScoreFiles(fullPath)));
+    } else if (entry.name.endsWith('.mxl') || entry.name.endsWith('.xml')) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
+
+/**
+ * Health check com verificação de MuseScore, Audiveris e Python
  */
 app.get('/api/health', async (_req, res) => {
   let musescoreInstalled = false;
+  let audiverisInstalled = false;
+
   try {
-    const { stdout } = await execCommand('xvfb-run -a musescore3 --version');
+    const { stdout } = await execCommand('xvfb-run -a musescore3 --version', 10000);
     musescoreInstalled = stdout.includes('MuseScore');
+  } catch {}
+
+  try {
+    audiverisInstalled = fsSync.existsSync('/opt/audiveris/bin/Audiveris');
   } catch {}
 
   res.json({
     status: 'ok',
-    engine: 'musescore-python-music21',
+    engine: 'musescore-audiveris-music21',
     musescoreAvailable: musescoreInstalled,
+    audiverisAvailable: audiverisInstalled,
     time: new Date().toISOString()
   });
 });
@@ -89,6 +120,101 @@ app.post('/api/process-xml', async (req, res) => {
     await fs.unlink(processedFilePath).catch(() => {});
     console.error('Erro em /api/process-xml:', err);
     res.status(500).json({ error: 'Falha ao processar partitura no servidor.', debugLogs: err?.message });
+  }
+});
+
+/**
+ * NOVO ENDPOINT: Reconhecimento Ótico Musical (OMR) de PDFs via Audiveris e anotações via Python
+ */
+app.post('/api/process-pdf', upload.single('pdf'), async (req, res) => {
+  const instrument = (req.body?.instrument as string) || 'Trompete';
+  let pdfBuffer: Buffer | null = null;
+
+  if (req.file && req.file.buffer) {
+    pdfBuffer = req.file.buffer;
+  } else if (req.body?.pdfBase64) {
+    const cleanB64 = req.body.pdfBase64.replace(/^data:[^;]+;base64,/, '');
+    pdfBuffer = Buffer.from(cleanB64, 'base64');
+  }
+
+  if (!pdfBuffer || pdfBuffer.length === 0) {
+    return res.status(400).json({ error: 'Arquivo PDF não fornecido.' });
+  }
+
+  const jobDir = path.join(os.tmpdir(), `audiveris_job_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+  const inputPdfPath = path.join(jobDir, 'input.pdf');
+  const outputOmrDir = path.join(jobDir, 'output');
+
+  try {
+    await fs.mkdir(jobDir, { recursive: true });
+    await fs.mkdir(outputOmrDir, { recursive: true });
+    await fs.writeFile(inputPdfPath, pdfBuffer);
+
+    const audiverisBin = '/opt/audiveris/bin/Audiveris';
+    if (!fsSync.existsSync(audiverisBin)) {
+      throw new Error('O binário do Audiveris não foi encontrado em /opt/audiveris/bin/Audiveris.');
+    }
+
+    console.log(`[Audiveris OMR] Iniciando processamento para ${req.file?.originalname || 'arquivo.pdf'} (instrumento: ${instrument})...`);
+
+    // Executa Audiveris em modo headless (-batch -export) com timeout de 3 minutos (180.000 ms)
+    const audiverisCmd = `xvfb-run -a "${audiverisBin}" -batch -export -output "${outputOmrDir}" "${inputPdfPath}"`;
+    let audiverisLogs = '';
+
+    try {
+      const result = await execCommand(audiverisCmd, 180000);
+      audiverisLogs = `${result.stdout}\n${result.stderr}`;
+    } catch (cmdErr: any) {
+      audiverisLogs = cmdErr.message || '';
+      console.warn('[Audiveris OMR] Processo finalizado com avisos/erros. Verificando se arquivo .mxl foi gerado...');
+    }
+
+    // Busca arquivos de partitura gerados (.mxl ou .xml)
+    const foundScores = await findScoreFiles(outputOmrDir);
+
+    if (foundScores.length === 0) {
+      console.error('[Audiveris OMR] Nenhum arquivo .mxl ou .xml gerado pelo Audiveris.\nLogs:\n', audiverisLogs);
+      return res.status(422).json({
+        error: 'O Audiveris OMR não conseguiu reconhecer pautas musicais válidas no PDF.',
+        debugLogs: audiverisLogs,
+      });
+    }
+
+    // Prioriza .mxl se houver
+    const scoreFile = foundScores.find(f => f.endsWith('.mxl')) || foundScores[0];
+    console.log(`[Audiveris OMR] Partitura extraída com sucesso: ${scoreFile}`);
+
+    // Passa a partitura para o script Python existente (process_score.py)
+    const pythonScriptPath = path.resolve(__dirname, 'scripts', 'process_score.py');
+    const pyResult = await execCommand(`python3 "${pythonScriptPath}" "${scoreFile}" "${instrument}"`);
+
+    const processedXmlPath = `${scoreFile}.processed.xml`;
+    if (!fsSync.existsSync(processedXmlPath)) {
+      throw new Error('Falha ao gerar arquivo MusicXML anotado pelo Python.');
+    }
+
+    const processedXml = await fs.readFile(processedXmlPath, 'utf-8');
+    const keyMatch = pyResult.stdout.match(/KEY:(.+)/);
+    const detectedKey = keyMatch ? keyMatch[1].trim() : 'Desconhecido';
+
+    res.json({
+      success: true,
+      processedXml,
+      detectedKey,
+      debugLogs: `${audiverisLogs}\n--- PYTHON LOGS ---\n${pyResult.stderr}`,
+    });
+  } catch (err: any) {
+    console.error('Erro em /api/process-pdf:', err);
+    res.status(500).json({
+      error: 'Falha no processamento OMR do PDF.',
+      details: err?.message,
+      debugLogs: err?.message
+    });
+  } finally {
+    // Limpeza do diretório temporário do job
+    try {
+      await fs.rm(jobDir, { recursive: true, force: true });
+    } catch {}
   }
 });
 

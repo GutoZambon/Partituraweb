@@ -4,7 +4,7 @@ FROM node:22-slim
 # Evita perguntas interativas durante a instalação
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instala Python 3, pip, venv, MuseScore 3, Xvfb para modo headless e fontes musicais
+# Instala Python 3, pip, venv, MuseScore 3, Xvfb para modo headless, Java 17, Tesseract OCR e bibliotecas necessárias
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -12,9 +12,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     musescore3 \
     xvfb \
     xauth \
+    openjdk-17-jre-headless \
+    tesseract-ocr \
+    tesseract-ocr-por \
+    tesseract-ocr-eng \
+    libgtk-3-0 \
+    wget \
+    ca-certificates \
     fonts-freefont-ttf \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# Baixa e instala a release oficial do Audiveris para /opt/audiveris
+RUN mkdir -p /tmp/audiveris_install && \
+    wget -q https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-ubuntu22.04-x86_64.deb -O /tmp/audiveris_install/audiveris.deb && \
+    mkdir -p /usr/share/desktop-directories && \
+    (dpkg -i /tmp/audiveris_install/audiveris.deb || true) && \
+    chmod +x /opt/audiveris/bin/Audiveris && \
+    mkdir -p /root/.config/AudiverisLtd/audiveris/tessdata && \
+    ln -sf /usr/share/tesseract-ocr/5/tessdata/*.traineddata /root/.config/AudiverisLtd/audiveris/tessdata/ 2>/dev/null || true && \
+    rm -rf /tmp/audiveris_install
 
 # Cria um ambiente virtual Python e instala o music21
 RUN python3 -m venv /opt/venv
