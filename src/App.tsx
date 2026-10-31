@@ -5,13 +5,24 @@ import { DropZone } from './components/DropZone';
 import { ScoreReorderList } from './components/ScoreReorderList';
 import { ScoreViewer } from './components/ScoreViewer';
 import { ExportModal } from './components/ExportModal';
-import { Music2, Printer, Sparkles, BookOpen, Tablet, HelpCircle } from 'lucide-react';
+import {
+  Music2,
+  Printer,
+  Sparkles,
+  BookOpen,
+  Tablet,
+  FolderArchive,
+  Music,
+  Sliders,
+  FileCheck
+} from 'lucide-react';
 
 export default function App() {
   const [scores, setScores] = useState<ScoreItem[]>([]);
   const [selectedScoreId, setSelectedScoreId] = useState<string | null>(null);
   const [defaultInstrument, setDefaultInstrument] = useState<InstrumentType>('Trompete');
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'files' | 'viewer' | 'config'>('files');
 
   const [options, setOptions] = useState<ProcessingOptions>({
     addFingerings: true,
@@ -19,15 +30,18 @@ export default function App() {
     addKeyHeader: true,
     transposeSolToFa: true,
     removeBlankPages: true,
-    outputFormats: ['caderninho_a5', 'kindle_10'],
+    outputFormats: ['normal_a4'],
     unifiedPrint: true,
   });
 
   const handleAddScores = (newScores: ScoreItem[]) => {
     setScores((prev) => {
       const updated = [...prev, ...newScores];
-      if (!selectedScoreId && updated.length > 0) {
-        setSelectedScoreId(updated[0].id);
+      if (updated.length > 0) {
+        const firstValid = newScores.find((s) => s.status !== 'error') || updated[0];
+        setSelectedScoreId(firstValid.id);
+        // No celular, troca automaticamente para a aba do visualizador para conferir o resultado
+        setMobileTab('viewer');
       }
       return updated;
     });
@@ -61,9 +75,15 @@ export default function App() {
     });
   };
 
+  const handleSelectScoreAndTab = (id: string) => {
+    setSelectedScoreId(id);
+    setMobileTab('viewer');
+  };
+
   const validScores = scores.filter(
     (s) => s.status !== 'error' && (s.xmlContent || (s.pdfPages && s.pdfPages.length > 0))
   );
+
   const currentScore =
     scores.find(
       (s) =>
@@ -76,42 +96,47 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-stone-900 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Top Bar Contract (1 Row: Brand - Links - 1 Action) */}
-      <header className="border-b border-stone-200 bg-white/90 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
-          {/* Zone 1: Wordmark */}
+      {/* Top Header */}
+      <header className="border-b border-stone-200 bg-white/95 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          {/* Brand */}
           <div className="flex items-center gap-2.5 shrink-0">
             <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-xs">
               <Music2 className="w-5 h-5" />
             </div>
-            <span className="text-lg font-bold tracking-tight text-stone-900 whitespace-nowrap">
-              PartiturasWeb
-            </span>
+            <div>
+              <span className="text-base sm:text-lg font-bold tracking-tight text-stone-900 leading-tight block">
+                PartiturasWeb
+              </span>
+              <span className="text-[10px] text-stone-500 font-medium hidden sm:block">
+                Metais & OMR Audiveris
+              </span>
+            </div>
           </div>
 
-          {/* Zone 2: Navigation Links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
-            <a href="#pipeline" className="hover:text-stone-900 transition-colors whitespace-nowrap">
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-stone-600">
+            <span className="hover:text-stone-900 transition-colors cursor-default">
               Pipeline de Metais
-            </a>
-            <a href="#caderninho" className="hover:text-stone-900 transition-colors whitespace-nowrap">
-              Caderninho A5 2-em-1
-            </a>
-            <a href="#kindle" className="hover:text-stone-900 transition-colors whitespace-nowrap">
+            </span>
+            <span className="hover:text-stone-900 transition-colors cursor-default">
+              Caderninho A5
+            </span>
+            <span className="hover:text-stone-900 transition-colors cursor-default">
               Kindle 10" Scribe
-            </a>
-            <a href="#omr" className="hover:text-stone-900 transition-colors whitespace-nowrap">
-              Reconhecimento Ótico
-            </a>
+            </span>
+            <span className="hover:text-stone-900 transition-colors cursor-default">
+              OMR Audiveris & MuseScore
+            </span>
           </nav>
 
-          {/* Zone 3: Primary Action */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Action button */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setIsExportOpen(true)}
               disabled={validScores.length === 0}
-              className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-all shadow-xs flex items-center gap-2 whitespace-nowrap"
+              className="px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:pointer-events-none rounded-lg transition-all shadow-xs flex items-center gap-2 whitespace-nowrap"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Exportar ({validScores.length})</span>
@@ -120,69 +145,145 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-8">
-        {/* Intro Banner */}
-        <section className="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs flex flex-wrap items-center justify-between gap-6">
-          <div className="max-w-2xl space-y-1.5">
-            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700 tracking-wide uppercase">
-              <Sparkles className="w-4 h-4" />
+      {/* Main Viewport */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6 pb-24 lg:pb-8">
+        {/* Intro Banner (Compacto no celular) */}
+        <section className="bg-white border border-stone-200 rounded-2xl p-4 sm:p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="max-w-2xl space-y-1">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+              <Sparkles className="w-3.5 h-3.5" />
               <span>Automação para Bandas Marciais & Orquestras</span>
             </div>
-            <h1 className="text-xl md:text-2xl font-bold text-stone-900 tracking-tight">
+            <h1 className="text-lg sm:text-2xl font-bold text-stone-900 tracking-tight leading-snug">
               Processamento Inteligente de Partituras para Metais
             </h1>
-            <p className="text-sm text-stone-600 leading-relaxed">
-              Compatibilidade nativa com MuseScore (.mscz, .mscx), MusicXML e PDFs. Adicione posições de pisto, posições de vara (1–7), nomes de notas em português, detecção automática do tom no primeiro compasso e diagramação direta para Caderninho A5 e Kindle 10''.
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
+              Compatibilidade nativa com MuseScore (.mscz), MusicXML e PDFs via Audiveris OMR. Adicione digitação de pistos, vara (1–7), solfejo em português e monte cadernos A5 e Kindle.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-stone-600">
-            <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-3 py-1.5 rounded-lg">
-              <BookOpen className="w-4 h-4 text-indigo-600" />
-              <span>2 Pág. por Folha A4</span>
+          <div className="flex items-center gap-2 text-xs text-stone-600 shrink-0">
+            <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-2.5 py-1.5 rounded-lg">
+              <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+              <span>2 Pág. p/ Folha A4</span>
             </div>
-            <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-3 py-1.5 rounded-lg">
-              <Tablet className="w-4 h-4 text-indigo-600" />
+            <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-2.5 py-1.5 rounded-lg">
+              <Tablet className="w-3.5 h-3.5 text-indigo-600" />
               <span>16:10 Paisagem</span>
             </div>
           </div>
         </section>
 
-        {/* 2-Column Split Workspace */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Column: Upload, Settings & Order (5 cols) */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* File Upload DropZone */}
-            <DropZone
-              onAddScores={handleAddScores}
-              selectedDefaultInstrument={defaultInstrument}
-              onChangeDefaultInstrument={setDefaultInstrument}
-            />
+        {/* Seletor de Abas Mobile (Apenas em telas menores que lg) */}
+        <div className="lg:hidden bg-stone-200/80 p-1 rounded-xl flex items-center justify-between gap-1 shadow-inner">
+          <button
+            type="button"
+            onClick={() => setMobileTab('files')}
+            className={`flex-1 py-2 px-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              mobileTab === 'files'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <FolderArchive className="w-3.5 h-3.5" />
+            <span>Arquivos ({scores.length})</span>
+          </button>
 
-            {/* Config Panel */}
-            <ConfigPanel options={options} onChange={setOptions} />
+          <button
+            type="button"
+            onClick={() => setMobileTab('viewer')}
+            className={`flex-1 py-2 px-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              mobileTab === 'viewer'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Music className="w-3.5 h-3.5" />
+            <span>Visualizar</span>
+          </button>
 
-            {/* Queue & Reorder List */}
-            <ScoreReorderList
-              scores={scores}
-              selectedScoreId={selectedScoreId}
-              onSelectScore={setSelectedScoreId}
-              onUpdateInstrument={handleUpdateInstrument}
-              onMoveScore={handleMoveScore}
-              onRemoveScore={handleRemoveScore}
-            />
+          <button
+            type="button"
+            onClick={() => setMobileTab('config')}
+            className={`flex-1 py-2 px-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              mobileTab === 'config'
+                ? 'bg-white text-stone-900 shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Opções</span>
+          </button>
+        </div>
+
+        {/* 2-Column Responsive Workspace */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column (No mobile, exibido dependendo da aba ativa) */}
+          <div
+            className={`lg:col-span-5 space-y-6 ${
+              mobileTab === 'files' || mobileTab === 'config' ? 'block' : 'hidden lg:block'
+            }`}
+          >
+            {/* Seção Arquivos / Upload */}
+            {(mobileTab === 'files' || window.innerWidth >= 1024) && (
+              <div className="space-y-6">
+                <DropZone
+                  onAddScores={handleAddScores}
+                  selectedDefaultInstrument={defaultInstrument}
+                  onChangeDefaultInstrument={setDefaultInstrument}
+                />
+
+                <ScoreReorderList
+                  scores={scores}
+                  selectedScoreId={selectedScoreId}
+                  onSelectScore={handleSelectScoreAndTab}
+                  onUpdateInstrument={handleUpdateInstrument}
+                  onMoveScore={handleMoveScore}
+                  onRemoveScore={handleRemoveScore}
+                />
+              </div>
+            )}
+
+            {/* Seção Configurações */}
+            {(mobileTab === 'config' || window.innerWidth >= 1024) && (
+              <ConfigPanel options={options} onChange={setOptions} />
+            )}
           </div>
 
-          {/* Right Column: Interactive Score Viewer (7 cols) */}
-          <div className="lg:col-span-7 sticky top-24">
-            <ScoreViewer
-              score={currentScore}
-              options={options}
-            />
+          {/* Right Column: Interactive Score Viewer */}
+          <div
+            className={`lg:col-span-7 lg:sticky lg:top-24 ${
+              mobileTab === 'viewer' ? 'block' : 'hidden lg:block'
+            }`}
+          >
+            <ScoreViewer score={currentScore} options={options} />
           </div>
         </div>
       </main>
+
+      {/* Floating Bottom Bar no Celular para Ação Rápida */}
+      <aside aria-label="Ações rápidas de exportação" className="lg:hidden fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-md border-t border-stone-200 z-30 shadow-lg">
+        <div className="max-w-md mx-auto flex items-center justify-between gap-3">
+          <div className="text-xs">
+            <span className="font-semibold text-stone-900 block">
+              {validScores.length} partitura(s) pronta(s)
+            </span>
+            <span className="text-stone-500 text-[11px]">
+              Formato Normal A4
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsExportOpen(true)}
+            disabled={validScores.length === 0}
+            className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 text-white font-semibold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Exportar PDFs</span>
+          </button>
+        </div>
+      </aside>
 
       {/* Export Modal */}
       <ExportModal
@@ -192,11 +293,11 @@ export default function App() {
         options={options}
       />
 
-      {/* Minimal Footer */}
-      <footer className="border-t border-stone-200 bg-white py-6 mt-12 text-center text-xs text-stone-500">
-        <div className="max-w-7xl mx-auto px-6 flex flex-wrap items-center justify-between gap-4">
-          <p>© 2026 PartiturasWeb · Acesso público gratuito e sem necessidade de cadastro.</p>
-          <div className="flex items-center gap-4">
+      {/* Footer */}
+      <footer className="border-t border-stone-200 bg-white py-6 mt-8 text-center text-xs text-stone-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-4">
+          <p>© 2026 PartiturasWeb · Audiveris OMR, MuseScore & Python Music21.</p>
+          <div className="flex items-center gap-3">
             <span>Trompete</span>
             <span>·</span>
             <span>Trombone</span>
