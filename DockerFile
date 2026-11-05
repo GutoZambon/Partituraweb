@@ -1,29 +1,41 @@
-# Usa uma imagem base do Node.js
+# Usamos a versão slim do Node.js para manter a imagem base leve
 FROM node:22-slim
 
-# Instala o Python 3 e o pip
-RUN apt-get update && apt-get install -y python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
+# 1. Instalar dependências do sistema operacional
+# Inclui Python, Java (para Audiveris), Tesseract (OCR), MuseScore (renderização) e bibliotecas gráficas
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-venv \
+    openjdk-17-jre-headless \
+    tesseract-ocr tesseract-ocr-por tesseract-ocr-eng \
+    musescore3 xvfb xauth \
+    wget unzip fontconfig libfreetype6 liblept5 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Cria um ambiente virtual Python e instala o music21
+# 2. Baixar e configurar o Audiveris 5.3.1
+# O binário é extraído para /opt/audiveris para ser chamado globalmente pelo backend
+RUN wget https://github.com/Audiveris/audiveris/releases/download/v5.3.1/Audiveris-5.3.1.zip -O /tmp/audiveris.zip \
+    && unzip /tmp/audiveris.zip -d /opt/ \
+    && mv /opt/Audiveris-5.3.1 /opt/audiveris \
+    && chmod +x /opt/audiveris/bin/Audiveris \
+    && rm /tmp/audiveris.zip
+
+# 3. Configurar ambiente Python e music21
+# O uso de venv é obrigatório nas versões recentes do Debian/Ubuntu para evitar conflitos com o sistema
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install music21
 
-# Configura o diretório de trabalho
-WORKDIR /app
+# 4. Configurar variáveis de ambiente
+# Limita a memória do Java para evitar OOM Kill e força o modo headless para interfaces gráficas
+ENV JAVA_OPTS="-Xmx2G -Djava.awt.headless=true"
+ENV QT_QPA_PLATFORM=offscreen
 
-# Copia os arquivos de dependência do Node
+# 5. Configurar a aplicação Node.js
+WORKDIR /app
 COPY package*.json ./
 RUN npm install
-
-# Copia o resto do código do projeto
 COPY . .
-
-# Compila o frontend (Vite)
 RUN npm run build
 
-# Expõe a porta
 EXPOSE 3000
-
-# Inicia o servidor
 CMD ["npm", "start"]
