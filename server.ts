@@ -48,26 +48,41 @@ app.post('/api/process-all', async (req, res) => {
 
   try {
     if (fileBase64) {
-      const pdfPath = path.join(tempDir, `${cleanName}.pdf`);
-      await fs.writeFile(pdfPath, Buffer.from(fileBase64, 'base64'));
+      const ext = (fileName || '').split('.').pop()?.toLowerCase();
 
-      console.log(`[OMR] Executando Audiveris no arquivo: ${cleanName}.pdf...`);
-      const cmdAudiveris = `export JAVA_OPTS="-Xmx2G -Djava.awt.headless=true" && xvfb-run -a /opt/audiveris/bin/Audiveris -batch -export -output "${tempDir}" "${pdfPath}"`;
+      if (ext === 'pdf') {
+        const pdfPath = path.join(tempDir, `${cleanName}.pdf`);
+        await fs.writeFile(pdfPath, Buffer.from(fileBase64, 'base64'));
 
-      await new Promise<void>((resolve) => {
-        exec(cmdAudiveris, { timeout: 300000 }, (error, _stdout, stderr) => {
-          if (error) console.warn(`[Audiveris Warning]: ${stderr || error.message}`);
-          resolve();
+        console.log(`[OMR] Executando Audiveris no arquivo: ${cleanName}.pdf...`);
+        const cmdAudiveris = `export JAVA_OPTS="-Xmx2G -Djava.awt.headless=true" && xvfb-run -a /opt/audiveris/bin/Audiveris -batch -export -output "${tempDir}" "${pdfPath}"`;
+
+        await new Promise<void>((resolve) => {
+          exec(cmdAudiveris, { timeout: 300000 }, (error, _stdout, stderr) => {
+            if (error) console.warn(`[Audiveris Warning]: ${stderr || error.message}`);
+            resolve();
+          });
         });
-      });
 
-      const files = await fs.readdir(tempDir);
-      const mxl = files.find(f => f.endsWith('.mxl') || f.endsWith('.xml'));
+        const files = await fs.readdir(tempDir);
+        const mxl = files.find(f => f.endsWith('.mxl') || f.endsWith('.xml'));
+        if (!mxl) throw new Error('Audiveris não identificou pautas legíveis no PDF.');
+        inputFilePath = path.join(tempDir, mxl);
 
-      if (!mxl) {
-        throw new Error('Audiveris não identificou pautas legíveis no PDF.');
+      } else if (ext === 'mscz' || ext === 'mscx') {
+        // Conversão de arquivo MuseScore nativo para MusicXML
+        const msczPath = path.join(tempDir, `${cleanName}.${ext}`);
+        await fs.writeFile(msczPath, Buffer.from(fileBase64, 'base64'));
+        const mxlConverted = path.join(tempDir, `${cleanName}.mxl`);
+
+        await new Promise<void>((resolve, reject) => {
+          exec(`xvfb-run -a musescore3 "${msczPath}" -o "${mxlConverted}"`, (err) => {
+            if (err) reject(new Error('Falha ao descompactar partitura MuseScore.'));
+            else resolve();
+          });
+        });
+        inputFilePath = mxlConverted;
       }
-      inputFilePath = path.join(tempDir, mxl);
     } else {
       inputFilePath = path.join(tempDir, `${cleanName}.xml`);
       await fs.writeFile(inputFilePath, xmlContent, 'utf-8');
@@ -96,7 +111,6 @@ app.post('/api/process-all', async (req, res) => {
 
         let processedXml = '';
         if (fsSync.existsSync(mxlOutPath)) {
-          // Converte o MXL gerado em XML para o OSMD renderizar no preview
           processedXml = await fs.readFile(mxlOutPath, 'utf-8').catch(() => '');
         }
 
@@ -108,7 +122,6 @@ app.post('/api/process-all', async (req, res) => {
 
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
-        console.log(`[Sucesso] Pacote finalizado com sucesso para ${cleanName}.`);
         res.json({
           success: true,
           processedXml,

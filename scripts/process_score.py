@@ -85,7 +85,7 @@ def obter_nome_pt(pitch):
     return nome
 
 def criar_estilo_kindle(pasta_saida, base_name):
-    """Estilo compacto para Kindle Paisagem (296.93 x 170.00 mm)."""
+    """Gera o arquivo de estilo (.mss) para o formato Kindle (296.93 x 170.00 mm)."""
     estilo_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <museScore version="3.01">
   <Style>
@@ -116,10 +116,10 @@ def criar_estilo_kindle(pasta_saida, base_name):
     caminho.write_text(estilo_xml, encoding='utf-8')
     return caminho
 
-def preparar_xml_kindle_com_cabecalho(caminho_xml_in, caminho_xml_out):
+def preparar_xml_kindle_mantendo_cabecalho(caminho_xml_in, caminho_xml_out):
     """
-    Ajusta as dimensões de página do MusicXML para Kindle (296.93 x 170.00 mm),
-    preservando intactos todos os cabeçalhos e títulos originais.
+    Configura a página do MusicXML para Kindle (296.93 x 170.00 mm em décimos),
+    preservando rigorosamente todos os cabeçalhos, títulos e créditos originais.
     """
     tree = ET.parse(str(caminho_xml_in))
     root = tree.getroot()
@@ -136,7 +136,7 @@ def preparar_xml_kindle_com_cabecalho(caminho_xml_in, caminho_xml_out):
         for child in list(page_layout):
             page_layout.remove(child)
 
-    # Coordenadas em décimos (296,93 mm = 1670 décimos | 170,00 mm = 956 décimos)
+    # 296,93 mm = 1670 décimos | 170,00 mm = 956 décimos
     ET.SubElement(page_layout, 'page-width').text = '1670'
     ET.SubElement(page_layout, 'page-height').text = '956'
 
@@ -151,10 +151,9 @@ def preparar_xml_kindle_com_cabecalho(caminho_xml_in, caminho_xml_out):
     return caminho_xml_out
 
 def aplicar_anotacoes(xml_path, modo_ou_instrumento, out_path):
-    """Executa anotações de notas e pistos respeitando os modos de operação."""
+    """Aplica notas e dedilhados conforme o instrumento ou modo selecionado."""
     score = music21.converter.parse(xml_path)
 
-    # 1. Detectar Tom
     key_signatures = list(score.recurse().getElementsByClass('KeySignature'))
     detected_key = "Desconhecido"
     if key_signatures:
@@ -163,7 +162,7 @@ def aplicar_anotacoes(xml_path, modo_ou_instrumento, out_path):
         mode = getattr(ks, 'mode', 'major') or 'major'
         detected_key = FIFTHS_MINOR.get(fifths, f"{fifths} acidentes") if mode == 'minor' else FIFTHS_MAJOR.get(fifths, f"{fifths} acidentes")
 
-    # 2. Transposição Clave Sol -> Fá para Bombardino e Trombone
+    # Transposição Clave Sol -> Fá para Bombardino e Trombone
     if modo_ou_instrumento in ["Bombardino", "Trombone"]:
         has_treble = any(c.sign == 'G' for c in score.recurse().getElementsByClass('Clef'))
         if has_treble:
@@ -174,7 +173,7 @@ def aplicar_anotacoes(xml_path, modo_ou_instrumento, out_path):
                     if c.activeSite is not None:
                         c.activeSite.replace(c, nova_clave)
 
-    # 3. Anotação de Notas e Pistos (Se não for apenas formatação)
+    # Se for "Apenas Formatação", não adiciona letras nem números
     if modo_ou_instrumento != "Apenas Formatação":
         adicionar_pistos = modo_ou_instrumento != "Apenas Notas"
         mapa = MAPEAMENTOS.get(modo_ou_instrumento)
@@ -221,61 +220,49 @@ def main():
 
     def run_ms(cmd_list):
         cmd = ["xvfb-run", "-a"] + cmd_list if use_xvfb else cmd_list
-        res = subprocess.run(cmd, capture_output=True, text=True, errors='replace')
-        if res.returncode != 0 and res.stderr:
-            debug(f"MuseScore aviso/erro: {res.stderr[:200]}")
+        subprocess.run(cmd, capture_output=True, text=True, errors='replace')
 
-    # ==========================
-    # 1. BLOCO A4 RETRATO PADRÃO
-    # ==========================
-    xml_a4_temp = pasta_saida / f"{base_name}_A4_temp.xml"
-    _, tom = aplicar_anotacoes(xml_input, modo, xml_a4_temp)
+    # 1. A4 RETRATO PADRÃO (Mantém cabeçalhos e formatação original)
+    xml_a4 = pasta_saida / f"{base_name}_A4.xml"
+    _, tom = aplicar_anotacoes(xml_input, modo, xml_a4)
 
     pdf_a4 = pasta_saida / f"{base_name}_A4.pdf"
     mscz_a4 = pasta_saida / f"{base_name}_A4.mscz"
     mxl_a4 = pasta_saida / f"{base_name}_A4.mxl"
 
-    run_ms([musescore_bin, str(xml_a4_temp), "-o", str(pdf_a4)])
-    run_ms([musescore_bin, str(xml_a4_temp), "-o", str(mscz_a4)])
-    run_ms([musescore_bin, str(xml_a4_temp), "-o", str(mxl_a4)])
+    run_ms([musescore_bin, str(xml_a4), "-o", str(pdf_a4)])
+    run_ms([musescore_bin, str(xml_a4), "-o", str(mscz_a4)])
+    run_ms([musescore_bin, str(xml_a4), "-o", str(mxl_a4)])
 
-    # ==========================
-    # 2. BLOCO KINDLE PAISAGEM
-    # ==========================
-    xml_kindle_temp = pasta_saida / f"{base_name}_KINDLE_temp.xml"
-    preparar_xml_kindle_com_cabecalho(xml_a4_temp, xml_kindle_temp)
+    # 2. KINDLE PAISAGEM (296.93 x 170 mm sem apagar títulos)
+    xml_kindle = pasta_saida / f"{base_name}_KINDLE.xml"
+    preparar_xml_kindle_mantendo_cabecalho(xml_a4, xml_kindle)
 
     mss_kindle = criar_estilo_kindle(pasta_saida, base_name)
     pdf_kindle = pasta_saida / f"{base_name}_KINDLE.pdf"
     mscz_kindle = pasta_saida / f"{base_name}_KINDLE.mscz"
     mxl_kindle = pasta_saida / f"{base_name}_KINDLE.mxl"
 
-    run_ms([musescore_bin, str(xml_kindle_temp), "-S", str(mss_kindle), "-o", str(pdf_kindle)])
-    run_ms([musescore_bin, str(xml_kindle_temp), "-S", str(mss_kindle), "-o", str(mscz_kindle)])
-    run_ms([musescore_bin, str(xml_kindle_temp), "-S", str(mss_kindle), "-o", str(mxl_kindle)])
+    run_ms([musescore_bin, str(xml_kindle), "-S", str(mss_kindle), "-o", str(pdf_kindle)])
+    run_ms([musescore_bin, str(xml_kindle), "-S", str(mss_kindle), "-o", str(mscz_kindle)])
+    run_ms([musescore_bin, str(xml_kindle), "-S", str(mss_kindle), "-o", str(mxl_kindle)])
 
-    # ==========================
     # 3. EMPACOTAMENTO NO ZIP (7 ARQUIVOS)
-    # ==========================
     zip_path = pasta_saida / f"{base_name}_pacote_completo.zip"
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # A4 Retrato
         if pdf_a4.exists(): zipf.write(pdf_a4, arcname=pdf_a4.name)
         if mscz_a4.exists(): zipf.write(mscz_a4, arcname=mscz_a4.name)
         if mxl_a4.exists(): zipf.write(mxl_a4, arcname=mxl_a4.name)
-        # Kindle Paisagem
         if pdf_kindle.exists(): zipf.write(pdf_kindle, arcname=pdf_kindle.name)
         if mscz_kindle.exists(): zipf.write(mscz_kindle, arcname=mscz_kindle.name)
         if mxl_kindle.exists(): zipf.write(mxl_kindle, arcname=mxl_kindle.name)
         if mss_kindle.exists(): zipf.write(mss_kindle, arcname=mss_kindle.name)
 
-    # Limpeza de XMLs temporários
-    if xml_a4_temp.exists(): xml_a4_temp.unlink(missing_ok=True)
-    if xml_kindle_temp.exists(): xml_kindle_temp.unlink(missing_ok=True)
+    # Limpeza de XMLs intermediários
+    if xml_kindle.exists(): xml_kindle.unlink(missing_ok=True)
 
-    # Saídas para captura do server.ts
     print(f"KEY:{tom}")
-    print(f"OUT:{mxl_a4}")
+    print(f"OUT:{xml_a4}")
     print(f"ZIP:{zip_path}")
 
 if __name__ == "__main__":
