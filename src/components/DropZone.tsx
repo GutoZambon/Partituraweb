@@ -44,7 +44,41 @@ export const DropZone: React.FC<DropZoneProps> = ({
       const ext = file.name.split('.').pop()?.toLowerCase();
 
       try {
-        if (ext === 'xml' || ext === 'musicxml') {
+        if (ext === 'pdf') {
+          setStatusMessage(`Executando Audiveris OMR no PDF: ${file.name} (pode levar 1 a 2 min)...`);
+          
+          // Converte o arquivo para Base64 para enviar via JSON
+          const dataUrl = await readFileAsBase64(file);
+          const base64Data = dataUrl.split(',')[1];
+
+          const response = await fetch('/api/process-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pdfBase64: base64Data,
+              fileName: file.name,
+              instrument: selectedDefaultInstrument,
+            }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Falha no processamento OMR do PDF.');
+          }
+
+          const data = await response.json();
+
+          newScores.push({
+            id: crypto.randomUUID(),
+            fileName: file.name,
+            originalFileType: 'mxl',
+            instrument: selectedDefaultInstrument,
+            xmlContent: data.processedXml,
+            detectedKey: data.detectedKey,
+            status: 'ready',
+          });
+
+        } else if (ext === 'xml' || ext === 'musicxml') {
           setStatusMessage(`Lendo partitura MusicXML: ${file.name}...`);
           const text = await file.text();
           newScores.push({
@@ -53,8 +87,9 @@ export const DropZone: React.FC<DropZoneProps> = ({
             originalFileType: 'xml',
             instrument: selectedDefaultInstrument,
             xmlContent: text,
-            status: 'ready'
+            status: 'ready',
           });
+
         } else if (ext === 'mxl') {
           setStatusMessage(`Descompactando partitura comprimida: ${file.name}...`);
           const arrayBuffer = await file.arrayBuffer();
@@ -65,27 +100,11 @@ export const DropZone: React.FC<DropZoneProps> = ({
             originalFileType: 'mxl',
             instrument: selectedDefaultInstrument,
             xmlContent: xml,
-            status: 'ready'
-          });
-        } else if (ext === 'pdf') {
-          setStatusMessage(`Processando páginas da partitura PDF: ${file.name}...`);
-          const arrayBuffer = await file.arrayBuffer();
-          const renderedPages = await renderPdfToImages(arrayBuffer, true);
-          if (renderedPages.length === 0) {
-            throw new Error('O arquivo PDF não possui páginas visíveis de partitura ou todas eram em branco.');
-          }
-          newScores.push({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            originalFileType: 'pdf',
-            instrument: selectedDefaultInstrument,
-            xmlContent: '',
-            pdfPages: renderedPages.map((p) => p.dataUrl),
-            pageCount: renderedPages.length,
             status: 'ready',
           });
+
         } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
-          setStatusMessage(`Carregando imagem da partitura: ${file.name}...`);
+          setStatusMessage(`Carregando imagem: ${file.name}...`);
           const dataUrl = await readFileAsBase64(file);
           newScores.push({
             id: crypto.randomUUID(),
@@ -97,8 +116,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
             pageCount: 1,
             status: 'ready',
           });
-        } else {
-          console.warn(`Formato não suportado: ${file.name}`);
         }
       } catch (err: any) {
         console.error('Falha ao processar arquivo:', err);
@@ -107,11 +124,11 @@ export const DropZone: React.FC<DropZoneProps> = ({
         newScores.push({
           id: crypto.randomUUID(),
           fileName: file.name,
-          originalFileType: 'xml',
+          originalFileType: 'pdf',
           instrument: selectedDefaultInstrument,
           xmlContent: '',
           status: 'error',
-          errorMessage: msg
+          errorMessage: msg,
         });
       }
     }

@@ -8,16 +8,15 @@ RUN apt-get update && apt-get install -y \
     openjdk-17-jre-headless \
     tesseract-ocr tesseract-ocr-por tesseract-ocr-eng \
     musescore3 xvfb xauth \
-    wget unzip fontconfig libfreetype6 liblept5 \
+    wget fontconfig libfreetype6 liblept5 libxtst6 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Baixar e configurar o Audiveris 5.3.1
-# O binário é extraído para /opt/audiveris para ser chamado globalmente pelo backend
-RUN wget https://github.com/Audiveris/audiveris/releases/download/v5.3.1/Audiveris-5.3.1.zip -O /tmp/audiveris.zip \
-    && unzip /tmp/audiveris.zip -d /opt/ \
-    && mv /opt/Audiveris-5.3.1 /opt/audiveris \
+# 2. Baixar e instalar o Audiveris oficial (versão 5.11.0 para Linux x86_64)
+# O pacote .deb oficial instala a estrutura diretamente em /opt/audiveris
+RUN wget https://github.com/Audiveris/audiveris/releases/download/5.11.0/Audiveris-5.11.0-ubuntu22.04-x86_64.deb -O /tmp/audiveris.deb \
+    && dpkg-deb -x /tmp/audiveris.deb / \
     && chmod +x /opt/audiveris/bin/Audiveris \
-    && rm /tmp/audiveris.zip
+    && rm /tmp/audiveris.deb
 
 # 3. Configurar ambiente Python e music21
 # O uso de venv é obrigatório nas versões recentes do Debian/Ubuntu para evitar conflitos com o sistema
@@ -33,7 +32,8 @@ ENV QT_QPA_PLATFORM=offscreen
 # 5. Configurar a aplicação Node.js
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+# Adicionado --legacy-peer-deps para resolver conflito de versão entre vite e esbuild
+RUN npm install --legacy-peer-deps
 COPY . .
 RUN npm run build
 
