@@ -33,7 +33,6 @@ function getPythonScriptPath(): string {
   return path.resolve(__dirname, 'process_score.py');
 }
 
-// Endpoint unificado: Processa PDF/XML, gera os 3 PDFs via MuseScore, MIDI e devolve o ZIP
 app.post('/api/process-all', async (req, res) => {
   const { fileBase64, xmlContent, fileName, instrument } = req.body;
 
@@ -49,18 +48,15 @@ app.post('/api/process-all', async (req, res) => {
 
   try {
     if (fileBase64) {
-      // É um PDF enviado pelo usuário
       const pdfPath = path.join(tempDir, `${cleanName}.pdf`);
       await fs.writeFile(pdfPath, Buffer.from(fileBase64, 'base64'));
 
       console.log(`[OMR] Executando Audiveris no arquivo: ${cleanName}.pdf...`);
       const cmdAudiveris = `export JAVA_OPTS="-Xmx2G -Djava.awt.headless=true" && xvfb-run -a /opt/audiveris/bin/Audiveris -batch -export -output "${tempDir}" "${pdfPath}"`;
 
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         exec(cmdAudiveris, { timeout: 300000 }, (error, _stdout, stderr) => {
-          if (error) {
-            console.warn(`[Audiveris Warning]: ${stderr || error.message}`);
-          }
+          if (error) console.warn(`[Audiveris Warning]: ${stderr || error.message}`);
           resolve();
         });
       });
@@ -69,22 +65,20 @@ app.post('/api/process-all', async (req, res) => {
       const mxl = files.find(f => f.endsWith('.mxl') || f.endsWith('.xml'));
 
       if (!mxl) {
-        throw new Error('Audiveris não encontrou pautas legíveis no PDF.');
+        throw new Error('Audiveris não identificou pautas legíveis no PDF.');
       }
       inputFilePath = path.join(tempDir, mxl);
     } else {
-      // É um XML ou MXL puro
       inputFilePath = path.join(tempDir, `${cleanName}.xml`);
       await fs.writeFile(inputFilePath, xmlContent, 'utf-8');
     }
 
-    // Executa o process_score.py para gerar os PDFs e o ZIP
-    console.log(`[Processamento] Gerando PDFs (A4, A5, Kindle), MIDI e ZIP para ${instrument}...`);
+    console.log(`[Processamento] Gerando pacote A4 e Kindle para ${instrument}...`);
     const pythonScript = getPythonScriptPath();
     const pythonBin = fsSync.existsSync('/opt/venv/bin/python') ? '/opt/venv/bin/python' : 'python3';
     const cmdPython = `"${pythonBin}" "${pythonScript}" "${inputFilePath}" "${instrument}" "${tempDir}"`;
 
-    exec(cmdPython, { timeout: 180000 }, async (pyErr, pyStdout, pyStderr) => {
+    exec(cmdPython, { timeout: 240000 }, async (pyErr, pyStdout, pyStderr) => {
       if (pyErr) {
         console.error(`[Python Error]: ${pyStderr || pyErr.message}`);
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -97,12 +91,13 @@ app.post('/api/process-all', async (req, res) => {
         const zipMatch = pyStdout.match(/ZIP:(.+)/);
 
         const detectedKey = keyMatch ? keyMatch[1].trim() : '';
-        const processedXmlPath = outMatch ? outMatch[1].trim() : '';
+        const mxlOutPath = outMatch ? outMatch[1].trim() : '';
         const zipPath = zipMatch ? zipMatch[1].trim() : '';
 
         let processedXml = '';
-        if (fsSync.existsSync(processedXmlPath)) {
-          processedXml = await fs.readFile(processedXmlPath, 'utf-8');
+        if (fsSync.existsSync(mxlOutPath)) {
+          // Converte o MXL gerado em XML para o OSMD renderizar no preview
+          processedXml = await fs.readFile(mxlOutPath, 'utf-8').catch(() => '');
         }
 
         let zipBase64 = '';
@@ -113,7 +108,7 @@ app.post('/api/process-all', async (req, res) => {
 
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
-        console.log(`[Sucesso] Pacote gerado com sucesso para ${cleanName}.`);
+        console.log(`[Sucesso] Pacote finalizado com sucesso para ${cleanName}.`);
         res.json({
           success: true,
           processedXml,

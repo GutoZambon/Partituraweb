@@ -58,13 +58,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-stone-900 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      <header className="border-b border-stone-200 bg-white/90 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-xs">
-              <Music2 className="w-5 h-5" />
+      {/* Top Bar simplificada para celular */}
+      <header className="border-b border-stone-200 bg-white/95 backdrop-blur-md sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-xs">
+              <Music2 className="w-4 h-4" />
             </div>
-            <span className="text-lg font-bold tracking-tight text-stone-900">
+            <span className="text-base sm:text-lg font-bold tracking-tight text-stone-900">
               PartiturasWeb
             </span>
           </div>
@@ -73,18 +74,20 @@ export default function App() {
             <a
               href={`data:application/zip;base64,${currentScore.zipBase64}`}
               download={currentScore.zipFileName || 'pacote_partituras.zip'}
-              className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs flex items-center gap-2"
+              className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs flex items-center gap-1.5"
             >
-              <Download className="w-4 h-4" />
-              <span>Baixar Pacote Completo (.ZIP)</span>
+              <Download className="w-3.5 h-3.5" />
+              <span>Baixar ZIP</span>
             </a>
           )}
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <div className="lg:col-span-5 space-y-6">
+      {/* Conteúdo principal */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
+          {/* Coluna Esquerda: Controles e Upload */}
+          <div className="lg:col-span-5 space-y-4 sm:space-y-6">
             <DropZone
               onAddScores={handleAddScores}
               selectedDefaultInstrument={defaultInstrument}
@@ -103,7 +106,8 @@ export default function App() {
             />
           </div>
 
-          <div className="lg:col-span-7 sticky top-24">
+          {/* Coluna Direita: Pré-Visualização A4 Padrão */}
+          <div className="lg:col-span-7 lg:sticky lg:top-20">
             <ScoreViewer score={currentScore} options={options} />
           </div>
         </div>
