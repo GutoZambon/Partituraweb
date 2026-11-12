@@ -157,7 +157,7 @@ app.post('/api/process-xml', async (req, res) => {
   }
 });
 
-// Dev vs Production static/Vite mounting
+// Altere o bloco final do server.ts para:
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -175,7 +175,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
+  const PORT = Number(process.env.PORT) || 3000;
+
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`PartiturasWeb server rodando na porta ${PORT} (dev: ${!isProd})`);
   });
 }
