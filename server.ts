@@ -13,7 +13,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// Cloud Run injeta a porta 8080
+const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -52,7 +53,6 @@ app.post('/api/process-pdf', async (req, res) => {
 
   console.log(`[OMR] Iniciando Audiveris para ${fileName || 'input.pdf'}...`);
 
-  // Executa o Audiveris em modo headless
   const cmdAudiveris = `export JAVA_OPTS="-Xmx2G -Djava.awt.headless=true" && xvfb-run -a /opt/audiveris/bin/Audiveris -batch -export -output "${tempDir}" "${pdfPath}"`;
 
   exec(cmdAudiveris, { timeout: 300000 }, async (error, stdout, stderr) => {
@@ -62,7 +62,6 @@ app.post('/api/process-pdf', async (req, res) => {
     }
 
     try {
-      // Localiza o arquivo .mxl gerado pelo Audiveris
       const files = await fs.readdir(tempDir);
       const mxlFile = files.find(f => f.endsWith('.mxl') || f.endsWith('.xml'));
 
@@ -78,7 +77,6 @@ app.post('/api/process-pdf', async (req, res) => {
       const mxlPath = path.join(tempDir, mxlFile);
       console.log(`[OMR] Sucesso. Arquivo gerado: ${mxlFile}. Enviando para o Python...`);
 
-      // Executa o Python music21 para adicionar pistos e tom
       const pythonScript = getPythonScriptPath();
       const pythonBin = fsSync.existsSync('/opt/venv/bin/python') ? '/opt/venv/bin/python' : 'python3';
       const cmdPython = `"${pythonBin}" "${pythonScript}" "${mxlPath}" "${instrument}"`;
@@ -157,6 +155,7 @@ app.post('/api/process-xml', async (req, res) => {
   }
 });
 
+// Inicialização do servidor
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -174,15 +173,12 @@ async function startServer() {
     });
   }
 
-  // O Cloud Run fornece a porta 8080 por padrão
-  const PORT = Number(process.env.PORT) || 8080;
-
+  // OBRIGATÓRIO PARA CLOUD RUN: escutar em 0.0.0.0
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`PartiturasWeb server rodando na porta ${PORT} (prod: ${isProd})`);
   });
 }
 
-// Captura qualquer erro fatal de inicialização para exibir nos logs
 startServer().catch((err) => {
   console.error('[Fatal Startup Error]:', err);
   process.exit(1);
