@@ -13,149 +13,127 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-// Cloud Run injeta a porta 8080
 const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Middleware para exibir no terminal todas as requisições que chegam
 app.use((req, _res, next) => {
   console.log(`[HTTP ${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Health check endpoint
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', engine: 'deterministic', time: new Date().toISOString() });
 });
 
-// Helper para encontrar o caminho correto do script Python
 function getPythonScriptPath(): string {
   const p1 = path.resolve(__dirname, 'scripts', 'process_score.py');
   if (fsSync.existsSync(p1)) return p1;
   return path.resolve(__dirname, 'process_score.py');
 }
 
-// 1. Rota para processar PDF via Audiveris (OMR) + Python
-app.post('/api/process-pdf', async (req, res) => {
-  const { pdfBase64, fileName, instrument } = req.body;
+// Endpoint unificado: Processa PDF/XML, gera os 3 PDFs via MuseScore, MIDI e devolve o ZIP
+app.post('/api/process-all', async (req, res) => {
+  const { fileBase64, xmlContent, fileName, instrument } = req.body;
 
-  if (!pdfBase64 || !instrument) {
-    return res.status(400).json({ error: 'Faltam parâmetros (pdfBase64 ou instrument)' });
+  if ((!fileBase64 && !xmlContent) || !instrument) {
+    return res.status(400).json({ error: 'Faltam dados da partitura ou modo/instrumento.' });
   }
 
-  const tempDir = path.join(os.tmpdir(), `omr_${Date.now()}`);
+  const tempDir = path.join(os.tmpdir(), `score_${Date.now()}`);
   await fs.mkdir(tempDir, { recursive: true });
 
-  const pdfPath = path.join(tempDir, 'input.pdf');
-  await fs.writeFile(pdfPath, Buffer.from(pdfBase64, 'base64'));
-
-  console.log(`[OMR] Iniciando Audiveris para ${fileName || 'input.pdf'}...`);
-
-  const cmdAudiveris = `export JAVA_OPTS="-Xmx2G -Djava.awt.headless=true" && xvfb-run -a /opt/audiveris/bin/Audiveris -batch -export -output "${tempDir}" "${pdfPath}"`;
-
-  exec(cmdAudiveris, { timeout: 300000 }, async (error, stdout, stderr) => {
-    if (error) {
-      console.error(`[Audiveris Error] ${error.message}`);
-      console.error(`[Audiveris Stderr] ${stderr}`);
-    }
-
-    try {
-      const files = await fs.readdir(tempDir);
-      const mxlFile = files.find(f => f.endsWith('.mxl') || f.endsWith('.xml'));
-
-      if (!mxlFile) {
-        console.error('[Audiveris] Nenhum arquivo MXL gerado.');
-        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-        return res.status(500).json({ 
-          error: 'Audiveris OMR não identificou pautas legíveis no PDF.',
-          debugLogs: stderr || stdout 
-        });
-      }
-
-      const mxlPath = path.join(tempDir, mxlFile);
-      console.log(`[OMR] Sucesso. Arquivo gerado: ${mxlFile}. Enviando para o Python...`);
-
-      const pythonScript = getPythonScriptPath();
-      const pythonBin = fsSync.existsSync('/opt/venv/bin/python') ? '/opt/venv/bin/python' : 'python3';
-      const cmdPython = `"${pythonBin}" "${pythonScript}" "${mxlPath}" "${instrument}"`;
-
-      exec(cmdPython, async (pyError, pyStdout, pyStderr) => {
-        if (pyError) {
-          console.error(`[Python Error] ${pyError.message}`);
-          console.error(`[Python Stderr] ${pyStderr}`);
-        }
-
-        const processedPath = `${mxlPath}.processed.xml`;
-        let processedXml = '';
-
-        if (fsSync.existsSync(processedPath)) {
-          processedXml = await fs.readFile(processedPath, 'utf-8');
-        } else if (fsSync.existsSync(mxlPath)) {
-          processedXml = await fs.readFile(mxlPath, 'utf-8');
-        }
-
-        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-
-        const keyMatch = pyStdout.match(/KEY:(.+)/);
-        const detectedKey = keyMatch ? keyMatch[1].trim() : '';
-
-        console.log(`[Concluído] Partitura processada. Tom: ${detectedKey}`);
-        res.json({ processedXml, detectedKey, debugLogs: pyStderr || stderr });
-      });
-
-    } catch (err: any) {
-      console.error(`[Erro Geral OMR] ${err.message}`);
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      res.status(500).json({ error: 'Erro no pipeline de processamento do PDF.' });
-    }
-  });
-});
-
-// 2. Rota para processar XML/MXL diretamente via Python
-app.post('/api/process-xml', async (req, res) => {
-  const { xmlContent, instrument } = req.body;
-
-  if (!xmlContent || !instrument) {
-    return res.status(400).json({ error: 'Faltam parâmetros' });
-  }
+  const cleanName = (fileName || 'partitura').replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  let inputFilePath = '';
 
   try {
-    const tempDir = os.tmpdir();
-    const tempFilePath = path.join(tempDir, `temp_${Date.now()}.xml`);
-    await fs.writeFile(tempFilePath, xmlContent, 'utf-8');
+    if (fileBase64) {
+      // É um PDF enviado pelo usuário
+      const pdfPath = path.join(tempDir, `${cleanName}.pdf`);
+      await fs.writeFile(pdfPath, Buffer.from(fileBase64, 'base64'));
 
+      console.log(`[OMR] Executando Audiveris no arquivo: ${cleanName}.pdf...`);
+      const cmdAudiveris = `export JAVA_OPTS="-Xmx2G -Djava.awt.headless=true" && xvfb-run -a /opt/audiveris/bin/Audiveris -batch -export -output "${tempDir}" "${pdfPath}"`;
+
+      await new Promise<void>((resolve, reject) => {
+        exec(cmdAudiveris, { timeout: 300000 }, (error, _stdout, stderr) => {
+          if (error) {
+            console.warn(`[Audiveris Warning]: ${stderr || error.message}`);
+          }
+          resolve();
+        });
+      });
+
+      const files = await fs.readdir(tempDir);
+      const mxl = files.find(f => f.endsWith('.mxl') || f.endsWith('.xml'));
+
+      if (!mxl) {
+        throw new Error('Audiveris não encontrou pautas legíveis no PDF.');
+      }
+      inputFilePath = path.join(tempDir, mxl);
+    } else {
+      // É um XML ou MXL puro
+      inputFilePath = path.join(tempDir, `${cleanName}.xml`);
+      await fs.writeFile(inputFilePath, xmlContent, 'utf-8');
+    }
+
+    // Executa o process_score.py para gerar os PDFs e o ZIP
+    console.log(`[Processamento] Gerando PDFs (A4, A5, Kindle), MIDI e ZIP para ${instrument}...`);
     const pythonScript = getPythonScriptPath();
     const pythonBin = fsSync.existsSync('/opt/venv/bin/python') ? '/opt/venv/bin/python' : 'python3';
+    const cmdPython = `"${pythonBin}" "${pythonScript}" "${inputFilePath}" "${instrument}" "${tempDir}"`;
 
-    exec(`"${pythonBin}" "${pythonScript}" "${tempFilePath}" "${instrument}"`, async (error, stdout, stderr) => {
-      await fs.unlink(tempFilePath).catch(() => {});
-
-      if (error) {
-        console.error(`[Python Error] ${error.message}`);
-        return res.status(500).json({ error: 'Falha ao processar partitura no servidor.', debugLogs: stderr });
+    exec(cmdPython, { timeout: 180000 }, async (pyErr, pyStdout, pyStderr) => {
+      if (pyErr) {
+        console.error(`[Python Error]: ${pyStderr || pyErr.message}`);
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        return res.status(500).json({ error: 'Falha ao processar e diagramar partitura.', details: pyStderr });
       }
 
-      const processedFilePath = `${tempFilePath}.processed.xml`;
       try {
-        const processedXml = await fs.readFile(processedFilePath, 'utf-8');
-        await fs.unlink(processedFilePath).catch(() => {});
+        const keyMatch = pyStdout.match(/KEY:(.+)/);
+        const outMatch = pyStdout.match(/OUT:(.+)/);
+        const zipMatch = pyStdout.match(/ZIP:(.+)/);
 
-        const keyMatch = stdout.match(/KEY:(.+)/);
         const detectedKey = keyMatch ? keyMatch[1].trim() : '';
+        const processedXmlPath = outMatch ? outMatch[1].trim() : '';
+        const zipPath = zipMatch ? zipMatch[1].trim() : '';
 
-        res.json({ processedXml, detectedKey, debugLogs: stderr });
-      } catch (readError) {
-        res.status(500).json({ error: 'Falha ao ler o resultado do processamento.' });
+        let processedXml = '';
+        if (fsSync.existsSync(processedXmlPath)) {
+          processedXml = await fs.readFile(processedXmlPath, 'utf-8');
+        }
+
+        let zipBase64 = '';
+        if (fsSync.existsSync(zipPath)) {
+          const zipBuffer = await fs.readFile(zipPath);
+          zipBase64 = zipBuffer.toString('base64');
+        }
+
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+
+        console.log(`[Sucesso] Pacote gerado com sucesso para ${cleanName}.`);
+        res.json({
+          success: true,
+          processedXml,
+          detectedKey,
+          zipBase64,
+          zipFileName: `${cleanName}_pacote_completo.zip`
+        });
+      } catch (e: any) {
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        res.status(500).json({ error: e.message });
       }
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Erro interno no servidor.' });
+
+  } catch (err: any) {
+    console.error(`[Erro Geral]: ${err.message}`);
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Inicialização do servidor
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -173,7 +151,6 @@ async function startServer() {
     });
   }
 
-  // OBRIGATÓRIO PARA CLOUD RUN: escutar em 0.0.0.0
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`PartiturasWeb server rodando na porta ${PORT} (prod: ${isProd})`);
   });

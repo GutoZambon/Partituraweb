@@ -1,9 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { InstrumentType, ScoreItem } from '../types/music';
-import { Upload, FileUp, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
+import { FileUp, Loader2, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import { extractMusicXml } from '../utils/musicLogic';
 import { SAMPLE_SCORES } from '../utils/sampleScores';
-import { renderPdfToImages } from '../utils/pdfReader';
 
 interface DropZoneProps {
   onAddScores: (scores: ScoreItem[]) => void;
@@ -27,16 +26,24 @@ export const DropZone: React.FC<DropZoneProps> = ({
     'Trombone',
     'Tuba',
     'Bombardino',
-    'Apenas Notas'
+    'Apenas Notas',
+    'Apenas Formatação',
   ];
+
+  const triggerDownload = (base64Data: string, fileName: string) => {
+    const link = document.createElement('a');
+    link.href = `data:application/zip;base64,${base64Data}`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     setUploadError(null);
     setIsProcessing(true);
-    setStatusMessage(`Processando ${files.length} arquivo(s)...`);
-
     const newScores: ScoreItem[] = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -44,206 +51,140 @@ export const DropZone: React.FC<DropZoneProps> = ({
       const ext = file.name.split('.').pop()?.toLowerCase();
 
       try {
+        setStatusMessage(`Processando e diagramando: ${file.name}...`);
+
+        let payload: any = {
+          fileName: file.name,
+          instrument: selectedDefaultInstrument,
+        };
+
         if (ext === 'pdf') {
-          setStatusMessage(`Executando Audiveris OMR no PDF: ${file.name} (pode levar 1 a 2 min)...`);
-          
-          // Converte o arquivo para Base64 para enviar via JSON
-          const dataUrl = await readFileAsBase64(file);
-          const base64Data = dataUrl.split(',')[1];
-
-          const response = await fetch('/api/process-pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pdfBase64: base64Data,
-              fileName: file.name,
-              instrument: selectedDefaultInstrument,
-            }),
+          setStatusMessage(`Executando OMR e renderizando PDFs e MIDI para: ${file.name}...`);
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve((reader.result as string).split(',')[1]);
+            reader.readAsDataURL(file);
           });
-
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || 'Falha no processamento OMR do PDF.');
-          }
-
-          const data = await response.json();
-
-          newScores.push({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            originalFileType: 'mxl',
-            instrument: selectedDefaultInstrument,
-            xmlContent: data.processedXml,
-            detectedKey: data.detectedKey,
-            status: 'ready',
-          });
-
-        } else if (ext === 'xml' || ext === 'musicxml') {
-          setStatusMessage(`Lendo partitura MusicXML: ${file.name}...`);
-          const text = await file.text();
-          newScores.push({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            originalFileType: 'xml',
-            instrument: selectedDefaultInstrument,
-            xmlContent: text,
-            status: 'ready',
-          });
-
+          payload.fileBase64 = base64;
         } else if (ext === 'mxl') {
-          setStatusMessage(`Descompactando partitura comprimida: ${file.name}...`);
-          const arrayBuffer = await file.arrayBuffer();
-          const xml = await extractMusicXml(arrayBuffer);
-          newScores.push({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            originalFileType: 'mxl',
-            instrument: selectedDefaultInstrument,
-            xmlContent: xml,
-            status: 'ready',
-          });
-
-        } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
-          setStatusMessage(`Carregando imagem: ${file.name}...`);
-          const dataUrl = await readFileAsBase64(file);
-          newScores.push({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            originalFileType: 'image',
-            instrument: selectedDefaultInstrument,
-            xmlContent: '',
-            pdfPages: [dataUrl],
-            pageCount: 1,
-            status: 'ready',
-          });
+          const buf = await file.arrayBuffer();
+          payload.xmlContent = await extractMusicXml(buf);
+        } else if (ext === 'xml' || ext === 'musicxml') {
+          payload.xmlContent = await file.text();
+        } else {
+          continue;
         }
-      } catch (err: any) {
-        console.error('Falha ao processar arquivo:', err);
-        const msg = err?.message || 'Falha ao processar arquivo.';
-        setUploadError(msg);
+
+        const res = await fetch('/api/process-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Falha ao processar partitura no servidor.');
+        }
+
+        const data = await res.json();
+
+        // Dispara o download automático do ZIP completo
+        if (data.zipBase64) {
+          triggerDownload(data.zipBase64, data.zipFileName);
+        }
+
         newScores.push({
           id: crypto.randomUUID(),
           fileName: file.name,
-          originalFileType: 'pdf',
+          originalFileType: ext as any,
           instrument: selectedDefaultInstrument,
-          xmlContent: '',
-          status: 'error',
-          errorMessage: msg,
+          xmlContent: data.processedXml,
+          detectedKey: data.detectedKey,
+          zipBase64: data.zipBase64,
+          zipFileName: data.zipFileName,
+          status: 'ready',
         });
+
+      } catch (err: any) {
+        setUploadError(err.message || 'Erro durante o processamento.');
       }
     }
 
     setIsProcessing(false);
     setStatusMessage(null);
+    if (newScores.length > 0) onAddScores(newScores);
+  };
 
-    if (newScores.length > 0) {
-      onAddScores(newScores);
+  const loadSample = () => {
+    const s = SAMPLE_SCORES[0];
+    if (s) {
+      onAddScores([{
+        id: crypto.randomUUID(),
+        fileName: s.fileName,
+        originalFileType: 'xml',
+        instrument: s.instrument,
+        xmlContent: s.xml,
+        title: s.name,
+        status: 'ready',
+      }]);
     }
-  };
-
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const loadSampleScores = () => {
-    const samples: ScoreItem[] = SAMPLE_SCORES.map(s => ({
-      id: crypto.randomUUID(),
-      fileName: s.fileName,
-      originalFileType: 'xml',
-      instrument: s.instrument,
-      xmlContent: s.xml,
-      title: s.name,
-      status: 'ready'
-    }));
-    onAddScores(samples);
   };
 
   return (
     <div className="space-y-4">
-      {/* Instrumento Padrão Seletor */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-stone-200">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-stone-500">
-            Instrumento Destino:
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {instrumentsList.map(inst => (
-              <button
-                key={inst}
-                type="button"
-                onClick={() => onChangeDefaultInstrument(inst)}
-                className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  selectedDefaultInstrument === inst
-                    ? 'bg-stone-900 text-white'
-                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                }`}
-              >
-                {inst}
-              </button>
-            ))}
-          </div>
+      {/* Seletor de Modo / Instrumento */}
+      <div className="bg-white p-4 rounded-xl border border-stone-200 space-y-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-stone-500 block">
+          1. Escolha o Instrumento ou Modo:
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {instrumentsList.map((inst) => (
+            <button
+              key={inst}
+              type="button"
+              onClick={() => onChangeDefaultInstrument(inst)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                selectedDefaultInstrument === inst
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+              }`}
+            >
+              {inst}
+            </button>
+          ))}
         </div>
-
-        <button
-          type="button"
-          onClick={loadSampleScores}
-          className="text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/80 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Carregar Partituras de Demonstração</span>
-        </button>
       </div>
 
-      {/* Upload Drop Area */}
+      {/* Drop Area */}
       <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragging(false);
-          handleFiles(e.dataTransfer.files);
-        }}
+        onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
         onClick={() => !isProcessing && fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-          isDragging
-            ? 'border-indigo-600 bg-indigo-50/50 scale-[0.99]'
-            : 'border-stone-300 hover:border-indigo-400 bg-white hover:bg-stone-50/50'
+          isDragging ? 'border-indigo-600 bg-indigo-50/50 scale-[0.99]' : 'border-stone-300 hover:border-indigo-400 bg-white'
         } ${isProcessing ? 'pointer-events-none opacity-80' : ''}`}
       >
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.png,.jpg,.jpeg,.xml,.mxl,.musicxml"
+          accept=".pdf,.xml,.mxl,.musicxml"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />
 
         <div className="max-w-md mx-auto space-y-3">
           <div className="w-12 h-12 mx-auto rounded-full bg-stone-100 flex items-center justify-center text-stone-600">
-            {isProcessing ? (
-              <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-            ) : (
-              <FileUp className="w-6 h-6" />
-            )}
+            {isProcessing ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> : <FileUp className="w-6 h-6" />}
           </div>
 
           <div>
             <p className="text-base font-semibold text-stone-900">
-              {isProcessing
-                ? 'Processando e analisando partituras...'
-                : 'Arraste as partituras aqui ou clique para selecionar'}
+              {isProcessing ? 'Processando e gerando pacote completo...' : '2. Arraste a partitura aqui (PDF ou XML)'}
             </p>
             <p className="text-xs text-stone-500 mt-1">
-              Suporta PDFs escaneados, fotos (.png, .jpg) e arquivos nativos MusicXML (.xml, .mxl)
+              O download do arquivo .ZIP (PDF Normal A4, Caderninho A5, Kindle Paisagem, MIDI e XML) iniciará automaticamente.
             </p>
           </div>
 
@@ -255,24 +196,9 @@ export const DropZone: React.FC<DropZoneProps> = ({
           )}
 
           {uploadError && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900 text-left space-y-1.5"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                  Aviso no processamento
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setUploadError(null)}
-                  className="text-stone-400 hover:text-stone-700"
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="text-red-800 leading-relaxed">{uploadError}</p>
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900 text-left flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p>{uploadError}</p>
             </div>
           )}
         </div>

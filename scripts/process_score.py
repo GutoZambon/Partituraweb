@@ -1,11 +1,15 @@
+#!/usr/bin/env python3
 import sys
+import os
+import subprocess
+import shutil
+import unicodedata
+import zipfile
 import xml.etree.ElementTree as ET
+from pathlib import Path
 import music21
 
-def debug(msg):
-    # Imprime no stderr para o Node.js capturar como log
-    print(f"[PYTHON DEBUG] {msg}", file=sys.stderr)
-
+# Dicionários de digitação (MIDI - 18)
 MAPA_TROMPETE = {
     34: "1-2-3", 35: "1-3", 36: "2-3", 37: "1-2", 38: "1", 39: "2", 40: "0",
     41: "1-2-3", 42: "1-3", 43: "2-3", 44: "1-2", 45: "1", 46: "2", 47: "0",
@@ -63,6 +67,9 @@ FIFTHS_MINOR = {
     -5: 'Si♭ menor', -6: 'Mi♭ menor', -7: 'Lá♭ menor'
 }
 
+def debug(msg):
+    print(f"[PYTHON DEBUG] {msg}", file=sys.stderr)
+
 def obter_nome_pt(pitch):
     step = pitch.step
     acc = pitch.accidental
@@ -78,14 +85,171 @@ def obter_nome_pt(pitch):
             nome += 'bb'
     return nome
 
-def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_names=True, add_key=True, transpose_sol_fa=True):
-    debug(f"Iniciando processamento. Instrumento recebido: '{instrument_name}'")
+def criar_estilo_cadernin(pasta_saida):
+    """Arquivo de estilo compacto para o formato Kindle (296.93 x 170.00 mm)."""
+    estilo_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="3.01">
+  <Style>
+    <pageWidth>11.6902</pageWidth>
+    <pageHeight>6.69291</pageHeight>
+    <pagePrintableWidth>11.2965</pagePrintableWidth>
+    <pageEvenLeftMargin>0.19685</pageEvenLeftMargin>
+    <pageOddLeftMargin>0.19685</pageOddLeftMargin>
+    <pageEvenTopMargin>0.19685</pageEvenTopMargin>
+    <pageEvenBottomMargin>0</pageEvenBottomMargin>
+    <pageOddTopMargin>0.19685</pageOddTopMargin>
+    <pageOddBottomMargin>0</pageOddBottomMargin>
+    <staffUpperBorder>3.0</staffUpperBorder>
+    <staffLowerBorder>2.0</staffLowerBorder>
+    <staffDistance>4.0</staffDistance>
+    <minSystemDistance>4.5</minSystemDistance>
+    <maxSystemDistance>7.5</maxSystemDistance>
+    <lyricsPosBelow x="0" y="2.5"/>
+    <lyricsOddFontSize>9</lyricsOddFontSize>
+    <lyricsEvenFontSize>9</lyricsEvenFontSize>
+    <enableIndentationOnFirstSystem>0</enableIndentationOnFirstSystem>
+    <showHeader>0</showHeader>
+    <showFooter>0</showFooter>
+    <spatium>1.778</spatium>
+  </Style>
+</museScore>"""
+    caminho = Path(pasta_saida) / "estilo_cadernin.mss"
+    caminho.write_text(estilo_xml, encoding='utf-8')
+    return caminho
+
+def criar_estilo_a5(pasta_saida):
+    """Arquivo de estilo para Caderninho A5 Paisagem."""
+    estilo_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="3.01">
+  <Style>
+    <pageWidth>8.26772</pageWidth>
+    <pageHeight>5.82677</pageHeight>
+    <pageEvenLeftMargin>0.25</pageEvenLeftMargin>
+    <pageOddLeftMargin>0.25</pageOddLeftMargin>
+    <pageEvenTopMargin>0.25</pageEvenTopMargin>
+    <pageEvenBottomMargin>0.25</pageEvenBottomMargin>
+    <pageOddTopMargin>0.25</pageOddTopMargin>
+    <pageOddBottomMargin>0.25</pageOddBottomMargin>
+    <showHeader>0</showHeader>
+    <showFooter>0</showFooter>
+    <spatium>1.65</spatium>
+  </Style>
+</museScore>"""
+    caminho = Path(pasta_saida) / "estilo_a5.mss"
+    caminho.write_text(estilo_xml, encoding='utf-8')
+    return caminho
+
+def preparar_xml_cadernin(caminho_xml):
+    """Ajusta o MusicXML para Paisagem 296.93 x 170 mm e insere título compacto no topo."""
+    tree = ET.parse(str(caminho_xml))
+    root = tree.getroot()
+
+    titulo_musica = ""
+    mov_title = root.find('movement-title')
+    if mov_title is not None and mov_title.text:
+        titulo_musica = mov_title.text.strip()
+
+    if not titulo_musica:
+        for credit in root.findall('credit'):
+            cw = credit.find('credit-words')
+            if cw is not None and cw.text:
+                texto = cw.text.strip()
+                if texto not in ["Tuba", "Trombone", "Trompete", "Bombardino", "Fanfarra Xamego"] and not texto.isdigit():
+                    titulo_musica = texto
+                    break
+
+    if not titulo_musica:
+        titulo_musica = Path(caminho_xml).stem.replace("_pistos", "").replace("_notas", "").replace("_linha_baixo", "").replace("-Tuba", "").replace("_", " ").strip()
+
+    defaults = root.find('defaults')
+    if defaults is None:
+        defaults = ET.Element('defaults')
+        root.insert(0, defaults)
+
+    page_layout = defaults.find('page-layout')
+    if page_layout is None:
+        page_layout = ET.SubElement(defaults, 'page-layout')
+    else:
+        for child in list(page_layout):
+            page_layout.remove(child)
+
+    ET.SubElement(page_layout, 'page-width').text = '1670'
+    ET.SubElement(page_layout, 'page-height').text = '956'
+
+    for tipo in ['odd', 'even']:
+        margins = ET.SubElement(page_layout, 'page-margins', type=tipo)
+        ET.SubElement(margins, 'left-margin').text = '28'
+        ET.SubElement(margins, 'right-margin').text = '28'
+        ET.SubElement(margins, 'top-margin').text = '28'
+        ET.SubElement(margins, 'bottom-margin').text = '0'
+
+    for credit in list(root.findall('credit')):
+        root.remove(credit)
+
+    if mov_title is not None:
+        root.remove(mov_title)
+
+    work = root.find('work')
+    if work is not None:
+        root.remove(work)
+
+    part = root.find('part')
+    if part is not None:
+        compassos = part.findall('measure')
+        if compassos:
+            p = compassos[0].find('print')
+            if p is not None:
+                sys_layout = p.find('system-layout')
+                if sys_layout is not None:
+                    top_dist = sys_layout.find('top-system-distance')
+                    if top_dist is not None:
+                        sys_layout.remove(top_dist)
+
+    novo_credit = ET.Element('credit', page='1')
+    novo_words = ET.SubElement(novo_credit, 'credit-words', {
+        'default-x': '835',
+        'default-y': '935',
+        'font-family': 'Edwin',
+        'font-size': '14',
+        'font-weight': 'bold',
+        'justify': 'center',
+        'valign': 'top'
+    })
+    novo_words.text = titulo_musica
+
+    part_idx = list(root).index(part) if part in list(root) else len(list(root))
+    root.insert(part_idx, novo_credit)
+
+    caminho_temp = Path(caminho_xml).with_name(f"{Path(caminho_xml).stem}_cadernin_temp.xml")
+    tree.write(str(caminho_temp), encoding='utf-8', xml_declaration=True)
+    return caminho_temp
+
+def aplicar_anotacoes(xml_path, modo_ou_instrumento):
+    """Executa a rotina do music21 dependendo da escolha do usuário."""
     score = music21.converter.parse(xml_path)
-    
-    if transpose_sol_fa and instrument_name in ["Bombardino", "Trombone"]:
+
+    # 1. Detectar Tom
+    key_signatures = list(score.recurse().getElementsByClass('KeySignature'))
+    detected_key = "Desconhecido"
+    if key_signatures:
+        ks = key_signatures[0]
+        fifths = ks.sharps
+        mode = getattr(ks, 'mode', 'major') or 'major'
+        detected_key = FIFTHS_MINOR.get(fifths, f"{fifths} acidentes") if mode == 'minor' else FIFTHS_MAJOR.get(fifths, f"{fifths} acidentes")
+
+    # Se for "Apenas Formatação", não adiciona Tom no compasso nem letras de notas
+    if modo_ou_instrumento != "Apenas Formatação" and detected_key != "Desconhecido":
+        measures = list(score.recurse().getElementsByClass('Measure'))
+        if measures:
+            tb = music21.expressions.TextExpression(f"Tom: {detected_key}")
+            tb.style.fontSize = 11
+            tb.style.fontWeight = 'bold'
+            measures[0].insert(0, tb)
+
+    # 2. Transposição Clave Sol -> Fá para Bombardino e Trombone
+    if modo_ou_instrumento in ["Bombardino", "Trombone"]:
         has_treble = any(c.sign == 'G' for c in score.recurse().getElementsByClass('Clef'))
         if has_treble:
-            debug("Clave de Sol detectada. Transpondo para Fá (-M9).")
             score.transpose('-M9', inPlace=True)
             for c in score.recurse().getElementsByClass('Clef'):
                 if c.sign == 'G':
@@ -93,87 +257,103 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
                     if c.activeSite is not None:
                         c.activeSite.replace(c, nova_clave)
 
-    key_signatures = list(score.recurse().getElementsByClass('KeySignature'))
-    detected_key = "Desconhecido"
-    if key_signatures:
-        ks = key_signatures[0]
-        fifths = ks.sharps
-        mode = getattr(ks, 'mode', 'major') or 'major'
-        detected_key = FIFTHS_MINOR.get(fifths, f"{fifths} acidentes (menor)") if mode == 'minor' else FIFTHS_MAJOR.get(fifths, f"{fifths} acidentes")
+    # 3. Anotação de Notas e Pistos
+    if modo_ou_instrumento != "Apenas Formatação":
+        adicionar_pistos = modo_ou_instrumento not in ["Apenas Notas"]
+        mapa = MAPEAMENTOS.get(modo_ou_instrumento)
 
-    if add_key and detected_key != "Desconhecido":
-        measures = list(score.recurse().getElementsByClass('Measure'))
-        if measures:
-            m1 = measures[0]
-            # CORREÇÃO: Usando expressions.TextExpression
-            tb = music21.expressions.TextExpression(f"Tom: {detected_key}")
-            
-            tb.style.fontSize = 11
-            tb.style.fontWeight = 'bold'
-            m1.insert(0, tb)
-
-    mapa = MAPEAMENTOS.get(instrument_name)
-    if mapa:
-        debug(f"Mapa de dedilhado encontrado com {len(mapa)} posições.")
-    else:
-        debug(f"ALERTA CRÍTICO: Nenhum mapa encontrado para '{instrument_name}'.")
-
-    notas_processadas = 0
-    dedilhados_adicionados = 0
-
-    for nota in score.recurse().notes:
-        if nota.isNote:
-            notas_processadas += 1
-            nota.lyrics = [] 
-            
-            if add_note_names:
+        for nota in score.recurse().notes:
+            if nota.isNote:
+                nota.lyrics = []
                 nome_pt = obter_nome_pt(nota.pitch)
                 nota.addLyric(nome_pt, lyricNumber=1)
-                
-            if add_fingerings and mapa:
-                chave_qml = nota.pitch.midi - 18
-                dedilhado = mapa.get(chave_qml)
-                
-                if notas_processadas <= 5:
-                    debug(f"Nota {notas_processadas}: {nota.pitch.nameWithOctave} | MIDI: {nota.pitch.midi} | Chave QML: {chave_qml} | Dedilhado: {dedilhado}")
-                
-                if dedilhado:
-                    nota.addLyric(dedilhado, lyricNumber=2)
-                    dedilhados_adicionados += 1
-                    
-        elif nota.isChord:
-            nota.lyrics = [] 
-            for n in nota:
-                notas_processadas += 1
-                if add_note_names:
-                    nome_pt = obter_nome_pt(n.pitch)
-                    nota.addLyric(nome_pt, lyricNumber=1) 
-                    
-                if add_fingerings and mapa:
-                    chave_qml = n.pitch.midi - 18
-                    dedilhado = mapa.get(chave_qml)
-                    
-                    if notas_processadas <= 5:
-                        debug(f"Acorde Nota {notas_processadas}: {n.pitch.nameWithOctave} | MIDI: {n.pitch.midi} | Chave QML: {chave_qml} | Dedilhado: {dedilhado}")
-                        
+
+                if adicionar_pistos and mapa:
+                    chave = nota.pitch.midi - 18
+                    dedilhado = mapa.get(chave)
                     if dedilhado:
                         nota.addLyric(dedilhado, lyricNumber=2)
-                        dedilhados_adicionados += 1
-                break 
 
-    debug(f"Resumo: {notas_processadas} notas lidas, {dedilhados_adicionados} dedilhados inseridos.")
+            elif nota.isChord:
+                nota.lyrics = []
+                for n in nota:
+                    nome_pt = obter_nome_pt(n.pitch)
+                    nota.addLyric(nome_pt, lyricNumber=1)
+                    if adicionar_pistos and mapa:
+                        chave = n.pitch.midi - 18
+                        dedilhado = mapa.get(chave)
+                        if dedilhado:
+                            nota.addLyric(dedilhado, lyricNumber=2)
+                    break
 
-    out_path = xml_path + ".processed.xml"
-    score.write('musicxml', fp=out_path)
-    return out_path, detected_key
+    out_path = Path(xml_path).with_name(f"{Path(xml_path).stem}_processado.xml")
+    score.write('musicxml', fp=str(out_path))
+    return str(out_path), detected_key
+
+def main():
+    if len(sys.argv) < 3:
+        debug("Uso: process_score.py <caminho_xml> <modo_ou_instrumento> [pasta_saida]")
+        sys.exit(1)
+
+    xml_input = sys.argv[1]
+    modo = sys.argv[2]
+    pasta_saida = Path(sys.argv[3]) if len(sys.argv) > 3 else Path(xml_input).parent
+    base_name = Path(xml_input).stem.replace(".mxl", "").replace(".xml", "")
+
+    # 1. Processar XML com anotações e tom
+    xml_processado, tom = aplicar_anotacoes(xml_input, modo)
+    
+    # Executável do MuseScore (detecta container Linux ou local)
+    musescore_bin = "musescore3" if shutil.which("musescore3") else "musescore"
+    use_xvfb = shutil.which("xvfb-run") is not None
+
+    def run_ms(cmd_list):
+        if use_xvfb:
+            cmd = ["xvfb-run", "-a"] + cmd_list
+        else:
+            cmd = cmd_list
+        subprocess.run(cmd, capture_output=True, text=True, errors='replace')
+
+    # 2. Renderizar Normal A4
+    pdf_normal = pasta_saida / f"{base_name}_NORMAL_A4.pdf"
+    run_ms([musescore_bin, xml_processado, "-o", str(pdf_normal)])
+
+    # 3. Renderizar Caderninho A5
+    estilo_a5 = criar_estilo_a5(pasta_saida)
+    pdf_a5 = pasta_saida / f"{base_name}_CADERNINHO_A5.pdf"
+    run_ms([musescore_bin, xml_processado, "-S", str(estilo_a5), "-o", str(pdf_a5)])
+
+    # 4. Renderizar Kindle Cadernin (296.93 x 170 mm)
+    xml_kindle_temp = preparar_xml_cadernin(xml_processado)
+    estilo_kindle = criar_estilo_cadernin(pasta_saida)
+    pdf_kindle = pasta_saida / f"{base_name}_KINDLE_CADERNIN.pdf"
+    run_ms([musescore_bin, str(xml_kindle_temp), "-S", str(estilo_kindle), "-o", str(pdf_kindle)])
+
+    if Path(xml_kindle_temp).exists():
+        Path(xml_kindle_temp).unlink(missing_ok=True)
+
+    # 5. Renderizar MIDI
+    mid_file = pasta_saida / f"{base_name}.mid"
+    run_ms([musescore_bin, xml_processado, "-o", str(mid_file)])
+
+    # 6. Criar Arquivo ZIP com todo o pacote
+    zip_path = pasta_saida / f"{base_name}_pacote_completo.zip"
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        if Path(xml_processado).exists():
+            zipf.write(xml_processado, arcname=f"{base_name}_EDITAVEL.xml")
+        if pdf_normal.exists():
+            zipf.write(pdf_normal, arcname=pdf_normal.name)
+        if pdf_a5.exists():
+            zipf.write(pdf_a5, arcname=pdf_a5.name)
+        if pdf_kindle.exists():
+            zipf.write(pdf_kindle, arcname=pdf_kindle.name)
+        if mid_file.exists():
+            zipf.write(mid_file, arcname=mid_file.name)
+
+    # Saídas padronizadas para o backend capturar
+    print(f"KEY:{tom}")
+    print(f"OUT:{xml_processado}")
+    print(f"ZIP:{zip_path}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        debug("Uso: process_score.py <caminho_xml> <instrumento>")
-        sys.exit(1)
-    
-    xml_p = sys.argv[1]
-    inst = sys.argv[2]
-    out_p, key_name = process_xml_file(xml_p, inst)
-    print(f"KEY:{key_name}")
-    print(f"OUT:{out_p}")
+    main()
