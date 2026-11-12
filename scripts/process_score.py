@@ -107,6 +107,7 @@ def process_xml_file(xml_path, instrument_name, add_fingerings=True, add_note_na
             m1 = measures[0]
             # CORREÇÃO: Usando expressions.TextExpression
             tb = music21.expressions.TextExpression(f"Tom: {detected_key}")
+            
             tb.style.fontSize = 11
             tb.style.fontWeight = 'bold'
             m1.insert(0, tb)
