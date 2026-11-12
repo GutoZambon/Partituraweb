@@ -157,7 +157,6 @@ app.post('/api/process-xml', async (req, res) => {
   }
 });
 
-// Altere o bloco final do server.ts para:
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -175,11 +174,16 @@ async function startServer() {
     });
   }
 
-  const PORT = Number(process.env.PORT) || 3000;
+  // O Cloud Run fornece a porta 8080 por padrão
+  const PORT = Number(process.env.PORT) || 8080;
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`PartiturasWeb server rodando na porta ${PORT} (dev: ${!isProd})`);
+    console.log(`PartiturasWeb server rodando na porta ${PORT} (prod: ${isProd})`);
   });
 }
 
-startServer();
+// Captura qualquer erro fatal de inicialização para exibir nos logs
+startServer().catch((err) => {
+  console.error('[Fatal Startup Error]:', err);
+  process.exit(1);
+});

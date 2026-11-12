@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     musescore3 xvfb xauth \
     wget fontconfig libfreetype6 liblept5 libxtst6 \
     && rm -rf /var/lib/apt/lists/*
-    
+
 
 # 2. Baixar e instalar o Audiveris oficial (versão 5.11.0 para Linux x86_64)
 # O pacote .deb oficial instala a estrutura diretamente em /opt/audiveris
@@ -38,5 +38,5 @@ RUN npm run build
 # Ativa o modo de produção para servir o build compilado (elimina erros de HMR/WebSocket)
 ENV NODE_ENV=production
 
-EXPOSE 3000
+EXPOSE 8080
 CMD ["npm", "start"]
